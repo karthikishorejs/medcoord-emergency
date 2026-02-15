@@ -113,7 +113,7 @@
     <!-- Voice status -->
     <div id="voiceStatus" class="hidden bg-secondary/10 text-secondary rounded-xl p-4 mb-4 text-center">
       <p class="font-semibold text-lg">🎤 Listening...</p>
-      <p class="text-sm mt-1 text-ink/50">Say: "Metformin 500mg twice daily with food"</p>
+      <p class="text-sm mt-1 text-ink/50">Say: "Metformin, 500 mg, twice daily with food"</p>
     </div>
 
     <!-- Medication list (flash card grid) -->
@@ -484,63 +484,104 @@
 
     async function processVoiceTranscript(transcript) {
       if (!transcript) return;
-      const t = transcript.trim();
 
       // ── Parse spoken medication into name / dosage / instructions ──
-      // Supports patterns like:
+      // Deepgram (smart_format) outputs punctuated text with digits, e.g.:
+      //   "Metformin 500 mg twice daily with food."
+      //   "Take metformin, 500 milligrams, twice a day."
+      //   "Aspirin 75 mg once a day after breakfast."
+      //   "I take amlodipine 5 mg every morning."
       //   "Metformin 500mg twice daily with food"
-      //   "medication named metformin dosage 500mg instructions take with food"
-      //   "aspirin 75 milligrams once a day"
-      //   "amlodipine 5 milligram tablet every morning"
+
+      let t = transcript.trim();
+
+      // Strip trailing period / comma that Deepgram often adds
+      t = t.replace(/[.,!]+$/, '').trim();
+
+      // Strip leading filler phrases (case-insensitive)
+      t = t.replace(/^(i\s+take|i'm\s+taking|take|my\s+medication\s+is|my\s+medicine\s+is|medication\s+(?:named?\s+)?|medicine\s+(?:called\s+)?|the\s+medication\s+is)\s+/i, '').trim();
 
       let name = '', dosage = '', instructions = '';
 
       // Pattern 1: Keyword-based ("medication named X dosage Y instructions Z")
-      const kwMatch = t.match(/(?:medication\s+(?:named?\s+)?)?(.+?)(?:\s+dosage\s+)(.+?)(?:\s+instructions?\s+)(.+)/i);
+      const kwMatch = t.match(/(.+?)(?:\s+dosage\s+)(.+?)(?:\s+instructions?\s+)(.+)/i);
       if (kwMatch) {
         name = kwMatch[1].trim();
         dosage = kwMatch[2].trim();
         instructions = kwMatch[3].trim();
       } else {
-        // Pattern 2: Natural speech ("Metformin 500mg twice daily with food")
-        // Step A: Extract dosage (number + unit like mg, milligrams, ml, mcg, etc.)
-        const dosageRegex = /(\d+\.?\d*)\s*(mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|tablets?|capsules?|drops?)/i;
-        const dosageMatch = t.match(dosageRegex);
+        // Pattern 2: Comma-separated ("Metformin, 500 mg, twice daily with food")
+        const commaParts = t.split(/\s*,\s*/);
+        if (commaParts.length >= 3) {
+          // Check if middle part looks like a dosage
+          const dosageCheck = /\d+\.?\d*\s*(mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|iu|tablets?|capsules?|drops?)\b/i;
+          if (dosageCheck.test(commaParts[1])) {
+            name = commaParts[0].trim();
+            dosage = commaParts[1].trim();
+            instructions = commaParts.slice(2).join(', ').trim();
+          }
+        }
 
-        if (dosageMatch) {
-          const dosageStart = dosageMatch.index;
-          // Everything before dosage = medication name
-          name = t.substring(0, dosageStart).trim();
-          // The dosage itself
-          dosage = dosageMatch[0].trim();
-          // Everything after dosage = instructions/frequency
-          const afterDosage = t.substring(dosageStart + dosageMatch[0].length).trim();
-          if (afterDosage) instructions = afterDosage;
-        } else {
-          // Pattern 3: No dosage found — try to split on frequency keywords
-          const freqRegex = /\b(once|twice|three times|one time|two times|daily|every\s+(?:morning|night|day|evening)|before|after|with food)\b/i;
-          const freqMatch = t.match(freqRegex);
-          if (freqMatch) {
-            name = t.substring(0, freqMatch.index).trim();
-            instructions = t.substring(freqMatch.index).trim();
+        if (!name) {
+          // Pattern 3: Natural speech with dosage number+unit
+          // Match number + unit, possibly separated by space or not (500mg or 500 mg)
+          const dosageRegex = /(\d+\.?\d*)\s*(mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|iu|tablets?|capsules?|drops?)\b/i;
+          const dosageMatch = t.match(dosageRegex);
+
+          if (dosageMatch) {
+            const dosageStart = dosageMatch.index;
+            const dosageEnd = dosageStart + dosageMatch[0].length;
+
+            // Everything before dosage = medication name
+            name = t.substring(0, dosageStart).trim();
+            // Remove trailing comma/hyphen from name
+            name = name.replace(/[,\-]+$/, '').trim();
+
+            // The dosage itself
+            dosage = dosageMatch[0].trim();
+
+            // Everything after dosage = instructions/frequency
+            let afterDosage = t.substring(dosageEnd).trim();
+            // Remove leading comma/hyphen from instructions
+            afterDosage = afterDosage.replace(/^[,\-]+\s*/, '').trim();
+            if (afterDosage) instructions = afterDosage;
           } else {
-            // Fallback: put everything in the name field
-            name = t;
+            // Pattern 4: No dosage found — try to split on frequency/instruction keywords
+            const freqRegex = /\b(once|twice|three times|one time|two times|daily|every\s+(?:morning|night|day|evening|hour|\d+\s+hours?)|before\s+(?:meals?|food|breakfast|lunch|dinner)|after\s+(?:meals?|food|breakfast|lunch|dinner)|with\s+(?:food|meals?|water|milk))\b/i;
+            const freqMatch = t.match(freqRegex);
+            if (freqMatch) {
+              name = t.substring(0, freqMatch.index).trim();
+              name = name.replace(/[,\-]+$/, '').trim();
+              instructions = t.substring(freqMatch.index).trim();
+            } else {
+              // Last resort: everything is the name
+              name = t;
+            }
           }
         }
       }
 
-      // Clean up: remove trailing/leading common filler words from name
-      name = name.replace(/^(tablet|take|my|the|medication|medicine|called|named)\s+/i, '').trim();
-      name = name.replace(/\s+(tablet|capsule)$/i, '').trim();
+      // Clean up medication name
+      // Remove filler words that might remain after stripping
+      name = name.replace(/^(tablet|take|my|the|a|an|medication|medicine|called|named)\s+/gi, '').trim();
+      name = name.replace(/\s+(tablet|capsule|pill)s?$/i, '').trim();
+      // Remove trailing commas/periods
+      name = name.replace(/[.,]+$/, '').trim();
+
+      // Clean up dosage — remove trailing commas
+      dosage = dosage.replace(/[.,]+$/, '').trim();
+
+      // Clean up instructions — remove trailing periods, leading "and"
+      instructions = instructions.replace(/^(and\s+)/i, '').trim();
+      instructions = instructions.replace(/[.]+$/, '').trim();
 
       // Capitalize first letter of name
       if (name) name = name.charAt(0).toUpperCase() + name.slice(1);
 
       // Fill in the form fields
       document.getElementById('medName').value = name;
-      if (dosage) document.getElementById('medDosage').value = dosage;
-      if (instructions) document.getElementById('medInstructions').value = instructions;
+      document.getElementById('medDosage').value = dosage;
+      document.getElementById('medInstructions').value = instructions;
 
       // Focus the first empty field so the user can verify/correct
       if (!name) document.getElementById('medName').focus();
@@ -577,7 +618,12 @@
 
       // Encode as a URL so any phone camera opens the emergency view directly
       const base64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-      const baseUrl = window.location.origin + '/emergency.html';
+      // Use production Vercel URL for QR codes so they work when scanned on any device
+      const prodUrl = 'https://medcoord-emergency.vercel.app';
+      const origin = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? prodUrl
+        : window.location.origin;
+      const baseUrl = origin + '/emergency.html';
       const qrData = baseUrl + '#' + base64;
 
       const canvas = document.getElementById('qrCanvas');
