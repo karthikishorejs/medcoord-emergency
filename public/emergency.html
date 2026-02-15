@@ -71,6 +71,17 @@
 
     <ul id="medResults" class="space-y-3 flex-1 overflow-y-auto pb-6"></ul>
 
+    <!-- Auto-close countdown -->
+    <div id="autoCloseBar" class="mb-3">
+      <div class="flex items-center justify-between mb-1">
+        <p id="autoCloseText" class="text-sm text-ink/50 font-semibold">Auto-closing in <span id="autoCloseSeconds">15</span>s</p>
+        <button onclick="cancelAutoClose()" class="text-sm text-primary font-bold px-3 py-1 rounded-lg bg-primary/10 active:scale-95 transition">Keep Open</button>
+      </div>
+      <div class="w-full bg-gray-200 rounded-full h-1.5">
+        <div id="autoCloseProgress" class="bg-danger h-1.5 rounded-full transition-all duration-1000 ease-linear" style="width: 100%"></div>
+      </div>
+    </div>
+
     <button onclick="resetScanner()"
       class="btn-touch w-full bg-primary text-white rounded-2xl py-4 font-semibold shadow-lg active:scale-95 transition">
       Scan Another Patient
@@ -94,6 +105,9 @@
     let videoStream = null;
     let scanning = false;
     let animFrame = null;
+    let autoCloseTimer = null;
+    let autoCloseCountdown = null;
+    const AUTO_CLOSE_SECONDS = 15;
 
     // ── Start scanner ──────────────────────────────
     async function startScanner() {
@@ -177,6 +191,40 @@
           ${m.instructions ? `<p class="text-ink/50 text-sm mt-1">${esc(m.instructions)}</p>` : ''}
         </li>
       `).join('');
+
+      // Start auto-close countdown
+      startAutoClose();
+    }
+
+    // ── Auto-close countdown ─────────────────────────
+    function startAutoClose() {
+      let remaining = AUTO_CLOSE_SECONDS;
+      const bar = document.getElementById('autoCloseBar');
+      const secondsEl = document.getElementById('autoCloseSeconds');
+      const progressEl = document.getElementById('autoCloseProgress');
+
+      bar.classList.remove('hidden');
+      secondsEl.textContent = remaining;
+      progressEl.style.width = '100%';
+
+      autoCloseCountdown = setInterval(() => {
+        remaining--;
+        secondsEl.textContent = remaining;
+        progressEl.style.width = ((remaining / AUTO_CLOSE_SECONDS) * 100) + '%';
+        if (remaining <= 0) {
+          cancelAutoClose();
+          // Close the tab/window; if browser blocks it, show a message
+          window.close();
+          // Fallback if window.close() is blocked by the browser
+          document.getElementById('autoCloseText').textContent = 'You can close this tab now.';
+        }
+      }, 1000);
+    }
+
+    function cancelAutoClose() {
+      if (autoCloseCountdown) { clearInterval(autoCloseCountdown); autoCloseCountdown = null; }
+      const bar = document.getElementById('autoCloseBar');
+      if (bar) bar.classList.add('hidden');
     }
 
     // ── Handle decoded QR (from camera scanner) ──────
@@ -199,6 +247,7 @@
 
     // ── Reset ──────────────────────────────────────
     function resetScanner() {
+      cancelAutoClose();
       document.getElementById('resultsView').classList.add('hidden');
       document.getElementById('invalidView').classList.add('hidden');
       document.getElementById('scannerView').classList.remove('hidden');
