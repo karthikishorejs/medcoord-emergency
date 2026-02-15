@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="description" content="MedCoord Emergency Card – digital medication card with QR sharing" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="MedCoord" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='28' fill='%232563eb'/><text x='90' y='125' font-size='110' text-anchor='middle' fill='white'>💊</text></svg>" />
+  <title>MedCoord Emergency Card</title>
+  <link rel="manifest" href="/manifest.json" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            secondary: '#10b981',
+            danger: '#ef4444',
+            surface: '#f8fafc',
+            ink: '#0f172a',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Elderly-friendly base styles */
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .btn-touch {
+      min-height: 56px;
+      min-width: 56px;
+      font-size: 1.125rem;
+    }
+    .screen { display: none; }
+    .screen.active { display: flex; }
+    /* Camera viewfinder */
+    #cameraPreview { max-height: 50vh; object-fit: cover; border-radius: 0.75rem; }
+  </style>
+</head>
+<body class="bg-surface text-ink min-h-screen">
+
+  <!-- ============================================ -->
+  <!-- SCREEN 1 – HOME                             -->
+  <!-- ============================================ -->
+  <section id="screenHome" class="screen active flex-col items-center justify-center min-h-screen p-6 gap-6">
+    <div class="text-center mb-4">
+      <span class="text-6xl" aria-hidden="true">💊</span>
+      <h1 class="text-3xl font-bold mt-2 text-primary">MedCoord</h1>
+      <p class="text-lg text-ink/70 mt-1">Emergency Card</p>
+    </div>
+
+    <button onclick="showScreen('screenMedList')"
+      class="btn-touch w-full max-w-xs bg-primary text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
+      My Medications
+    </button>
+
+    <button onclick="showScreen('screenCamera')"
+      class="btn-touch w-full max-w-xs bg-secondary text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
+      Scan Prescription
+    </button>
+
+    <button onclick="generateAndShowQR()"
+      class="btn-touch w-full max-w-xs bg-danger text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
+      Show Emergency QR
+    </button>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SCREEN 2 – MEDICATION LIST + ENTRY           -->
+  <!-- ============================================ -->
+  <section id="screenMedList" class="screen flex-col min-h-screen p-6">
+    <header class="flex items-center gap-3 mb-6">
+      <button onclick="showScreen('screenHome')" class="btn-touch flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary text-2xl" aria-label="Back">←</button>
+      <h2 class="text-2xl font-bold">My Medications</h2>
+    </header>
+
+    <!-- Medication entry form -->
+    <form id="medForm" onsubmit="addMedication(event)" class="bg-white rounded-2xl p-5 shadow space-y-4 mb-6">
+      <div>
+        <label for="medName" class="block font-semibold mb-1 text-lg">Medication Name</label>
+        <input id="medName" type="text" required placeholder="e.g. Metformin"
+          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+      </div>
+      <div>
+        <label for="medDosage" class="block font-semibold mb-1 text-lg">Dosage</label>
+        <input id="medDosage" type="text" required placeholder="e.g. 500 mg twice daily"
+          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+      </div>
+      <div>
+        <label for="medInstructions" class="block font-semibold mb-1 text-lg">Instructions</label>
+        <input id="medInstructions" type="text" placeholder="e.g. Take with food"
+          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+      </div>
+
+      <div class="flex gap-3">
+        <button type="submit"
+          class="btn-touch flex-1 bg-primary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          Add
+        </button>
+        <button type="button" onclick="startVoiceInput()"
+          class="btn-touch w-16 bg-secondary text-white rounded-xl flex items-center justify-center active:scale-95 transition" aria-label="Voice input">
+          🎤
+        </button>
+      </div>
+    </form>
+
+    <!-- Voice status -->
+    <div id="voiceStatus" class="hidden bg-secondary/10 text-secondary rounded-xl p-4 mb-4 text-center">
+      <p class="font-semibold text-lg">🎤 Listening...</p>
+      <p class="text-sm mt-1 text-ink/50">Say: "Metformin 500mg twice daily with food"</p>
+    </div>
+
+    <!-- Medication list (flash card grid) -->
+    <ul id="medListContainer" class="grid grid-cols-2 gap-3 flex-1 overflow-y-auto pb-6"></ul>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="flex-1 flex items-center justify-center text-ink/40 text-lg">
+      No medications added yet.
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SCREEN 3 – CAMERA / PRESCRIPTION SCAN        -->
+  <!-- ============================================ -->
+  <section id="screenCamera" class="screen flex-col min-h-screen p-6">
+    <header class="flex items-center gap-3 mb-6">
+      <button onclick="stopCamera(); showScreen('screenHome')" class="btn-touch flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary text-2xl" aria-label="Back">←</button>
+      <h2 class="text-2xl font-bold">Scan Prescription</h2>
+    </header>
+
+    <video id="cameraPreview" autoplay playsinline class="w-full bg-black rounded-2xl mb-4"></video>
+
+    <!-- Image preview (shown after file upload) -->
+    <img id="uploadPreview" class="hidden w-full rounded-2xl mb-4 max-h-[50vh] object-contain bg-gray-100" alt="Uploaded prescription" />
+
+    <div id="cameraError" class="hidden bg-danger/10 text-danger rounded-xl p-4 text-center font-semibold mb-4">
+      Unable to access camera. Please allow camera permissions.
+    </div>
+
+    <div class="flex gap-3 mb-2">
+      <button onclick="capturePhoto()"
+        class="btn-touch flex-1 bg-primary text-white rounded-2xl py-4 font-semibold shadow-lg active:scale-95 transition">
+        📷 Capture
+      </button>
+      <button onclick="document.getElementById('fileInput').click()"
+        class="btn-touch flex-1 bg-secondary text-white rounded-2xl py-4 font-semibold shadow-lg active:scale-95 transition">
+        📎 Upload
+      </button>
+    </div>
+
+    <!-- Hidden file input for gallery/file picker -->
+    <input id="fileInput" type="file" accept="image/*" class="hidden" onchange="handleFileUpload(event)" />
+
+    <!-- Extraction result -->
+    <div id="extractResult" class="hidden mt-4 bg-white rounded-2xl p-5 shadow">
+      <h3 class="font-bold text-lg mb-2">Extracted Medications</h3>
+      <div id="extractBody" class="text-lg"></div>
+      <button onclick="importExtracted()"
+        class="btn-touch w-full mt-4 bg-secondary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+        Import All
+      </button>
+    </div>
+
+    <!-- Hidden canvas for capture -->
+    <canvas id="captureCanvas" class="hidden"></canvas>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- SCREEN 4 – QR CODE DISPLAY                   -->
+  <!-- ============================================ -->
+  <section id="screenQR" class="screen flex-col items-center justify-center min-h-screen p-6 gap-6">
+    <header class="flex items-center gap-3 self-start mb-2">
+      <button onclick="showScreen('screenHome')" class="btn-touch flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary text-2xl" aria-label="Back">←</button>
+      <h2 class="text-2xl font-bold">Emergency QR</h2>
+    </header>
+
+    <div class="bg-white rounded-3xl p-6 shadow-lg">
+      <canvas id="qrCanvas"></canvas>
+    </div>
+    <p class="text-ink/60 text-center text-lg max-w-xs">Show this QR code to an emergency responder so they can see your medications.</p>
+
+    <button onclick="checkInteractions()"
+      class="btn-touch w-full max-w-xs bg-secondary text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
+      Check Drug Interactions
+    </button>
+
+    <!-- Interactions result -->
+    <div id="interactionsResult" class="hidden w-full max-w-xs bg-white rounded-2xl p-5 shadow">
+      <h3 class="font-bold text-lg mb-2">Interaction Report</h3>
+      <div id="interactionsBody" class="text-base"></div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- LOADING OVERLAY                              -->
+  <!-- ============================================ -->
+  <div id="loadingOverlay" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-2xl p-8 flex flex-col items-center gap-4 shadow-xl">
+      <div class="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <p id="loadingText" class="text-lg font-semibold">Processing...</p>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- APPLICATION LOGIC                            -->
+  <!-- ============================================ -->
+  <script>
+    // ── State ──────────────────────────────────────
+    let medications = JSON.parse(localStorage.getItem('medcoord_meds') || '[]');
+    let cameraStream = null;
+    let extractedMeds = [];
+    let cachedInteractions = [];
+
+    // ── Navigation ─────────────────────────────────
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      if (id === 'screenMedList') renderMedList();
+      if (id === 'screenCamera') initCamera();
+    }
+
+    // ── Persistence ────────────────────────────────
+    function saveMeds() {
+      localStorage.setItem('medcoord_meds', JSON.stringify(medications));
+    }
+
+    // ── Medication CRUD ────────────────────────────
+    function addMedication(e) {
+      e.preventDefault();
+      const name = document.getElementById('medName').value.trim();
+      const dosage = document.getElementById('medDosage').value.trim();
+      const instructions = document.getElementById('medInstructions').value.trim();
+      if (!name || !dosage) return;
+      medications.push({ id: Date.now(), name, dosage, instructions });
+      saveMeds();
+      e.target.reset();
+      renderMedList();
+      checkAndDisplayInteractions();
+    }
+
+    function removeMedication(id) {
+      medications = medications.filter(m => m.id !== id);
+      saveMeds();
+      renderMedList();
+      checkAndDisplayInteractions();
+    }
+
+    function renderMedList() {
+      const container = document.getElementById('medListContainer');
+      const empty = document.getElementById('emptyState');
+      if (medications.length === 0) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      container.innerHTML = medications.map(m => {
+        // Find interactions involving this medication
+        const medInteractions = cachedInteractions.filter(i =>
+          i.pair.toLowerCase().includes(m.name.toLowerCase())
+        );
+        const hasInteraction = medInteractions.length > 0;
+        const hasSevere = medInteractions.some(i => i.severity === 'Severe');
+        const borderClass = hasInteraction
+          ? (hasSevere ? 'border-danger' : 'border-yellow-500')
+          : 'border-primary';
+        // Get the other drug names involved
+        const otherDrugs = medInteractions.map(i => {
+          const parts = i.pair.split(' + ');
+          return parts.find(p => p.toLowerCase() !== m.name.toLowerCase()) || parts[0];
+        });
+
+        return `
+        <li class="bg-white rounded-2xl p-4 shadow-md relative flex flex-col items-center text-center min-h-[120px] justify-center border-l-4 ${borderClass}">
+          <button onclick="removeMedication(${m.id})" class="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-danger/10 text-danger text-sm" aria-label="Remove">×</button>
+          <p class="font-bold text-base leading-tight mt-1">${esc(m.name)}</p>
+          <p class="text-primary font-semibold text-sm mt-1">${esc(m.dosage)}</p>
+          ${m.instructions ? `<p class="text-ink/50 text-xs mt-1">${esc(m.instructions)}</p>` : ''}
+          ${hasInteraction ? `<p class="text-xs mt-2 px-2 py-1 rounded-lg ${hasSevere ? 'bg-danger/10 text-danger' : 'bg-yellow-50 text-yellow-700'} font-semibold">⚠️ ${esc(otherDrugs.join(', '))}</p>` : ''}
+        </li>`;
+      }).join('');
+    }
+
+    // ── Drug Interaction Check (background) ──────
+    async function checkAndDisplayInteractions() {
+      if (medications.length < 2) {
+        cachedInteractions = [];
+        renderMedList();
+        return;
+      }
+      try {
+        const names = medications.map(m => m.name);
+        const res = await fetch('/api/drug-interactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ medications: names }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        cachedInteractions = data.interactions || [];
+        renderMedList();
+      } catch {
+        // Silently fail — interaction badges are optional
+      }
+    }
+
+    // ── Camera ─────────────────────────────────────
+    async function initCamera() {
+      const video = document.getElementById('cameraPreview');
+      const errEl = document.getElementById('cameraError');
+      errEl.classList.add('hidden');
+      document.getElementById('extractResult').classList.add('hidden');
+      // Reset upload preview and show video
+      document.getElementById('uploadPreview').classList.add('hidden');
+      document.getElementById('cameraPreview').classList.remove('hidden');
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        video.srcObject = cameraStream;
+      } catch {
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+    }
+
+    async function capturePhoto() {
+      const video = document.getElementById('cameraPreview');
+      const canvas = document.getElementById('captureCanvas');
+      if (!cameraStream) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      stopCamera();
+      await extractPrescription(dataUrl);
+    }
+
+    // ── File Upload ──────────────────────────────────
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      stopCamera();
+      // Hide video, show image preview
+      document.getElementById('cameraPreview').classList.add('hidden');
+      const preview = document.getElementById('uploadPreview');
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataUrl = e.target.result;
+        preview.src = dataUrl;
+        preview.classList.remove('hidden');
+        await extractPrescription(dataUrl);
+      };
+      reader.readAsDataURL(file);
+      // Reset file input so the same file can be re-selected
+      event.target.value = '';
+    }
+
+    // ── Image Compression ─────────────────────────
+    // Resize and compress to JPEG so it stays under Vercel's 4.5MB body limit
+    function compressImage(dataUrl, maxWidth = 1200, quality = 0.7) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.src = dataUrl;
+      });
+    }
+
+    // ── Prescription OCR ───────────────────────────
+    async function extractPrescription(imageDataUrl) {
+      showLoading('Extracting medications...');
+      try {
+        // Always compress to JPEG to keep payload small & MIME consistent
+        const compressed = await compressImage(imageDataUrl);
+        const base64 = compressed.split(',')[1];
+        const mimeType = 'image/jpeg';
+
+        const res = await fetch('/api/extract-prescription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64, mimeType }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Extraction failed');
+        extractedMeds = data.medications || [];
+        const body = document.getElementById('extractBody');
+        if (extractedMeds.length === 0) {
+          body.innerHTML = '<p class="text-ink/50">No medications detected. Try a clearer photo.</p>';
+        } else {
+          body.innerHTML = extractedMeds.map(m =>
+            `<div class="py-2 border-b last:border-0">
+              <p><strong>${esc(m.name)}</strong> — ${esc(m.dosage)}</p>
+              ${m.instructions ? `<p class="text-ink/70 text-base">${esc(m.instructions)}</p>` : ''}
+              ${m.pattern ? `<p class="text-ink/40 text-sm">Pattern: ${esc(m.pattern)} (Morning-Afternoon-Night)</p>` : ''}
+            </div>`
+          ).join('');
+        }
+        document.getElementById('extractResult').classList.remove('hidden');
+      } catch (err) {
+        alert('Could not extract medications: ' + err.message);
+        console.error(err);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function importExtracted() {
+      extractedMeds.forEach(m => {
+        medications.push({ id: Date.now() + Math.random(), ...m });
+      });
+      saveMeds();
+      extractedMeds = [];
+      showScreen('screenMedList');
+      checkAndDisplayInteractions();
+    }
+
+    // ── Voice Input ────────────────────────────────
+    async function startVoiceInput() {
+      const statusEl = document.getElementById('voiceStatus');
+
+      // Record audio and send to Deepgram via our API
+      statusEl.classList.remove('hidden');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        const chunks = [];
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          statusEl.classList.add('hidden');
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64 = reader.result.split(',')[1];
+            showLoading('Transcribing...');
+            try {
+              const res = await fetch('/api/voice-to-med', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audio: base64 }),
+              });
+              if (!res.ok) throw new Error('Transcription failed');
+              const data = await res.json();
+              await processVoiceTranscript(data.transcript || '');
+            } catch (err) {
+              alert('Voice transcription failed. Please try again.');
+              console.error(err);
+            } finally {
+              hideLoading();
+            }
+          };
+          reader.readAsDataURL(blob);
+        };
+
+        mediaRecorder.start();
+        // Record for 5 seconds then stop
+        setTimeout(() => { if (mediaRecorder.state === 'recording') mediaRecorder.stop(); }, 5000);
+      } catch {
+        statusEl.classList.add('hidden');
+        alert('Microphone access denied.');
+      }
+    }
+
+    async function processVoiceTranscript(transcript) {
+      if (!transcript) return;
+      const t = transcript.trim();
+
+      // ── Parse spoken medication into name / dosage / instructions ──
+      // Supports patterns like:
+      //   "Metformin 500mg twice daily with food"
+      //   "medication named metformin dosage 500mg instructions take with food"
+      //   "aspirin 75 milligrams once a day"
+      //   "amlodipine 5 milligram tablet every morning"
+
+      let name = '', dosage = '', instructions = '';
+
+      // Pattern 1: Keyword-based ("medication named X dosage Y instructions Z")
+      const kwMatch = t.match(/(?:medication\s+(?:named?\s+)?)?(.+?)(?:\s+dosage\s+)(.+?)(?:\s+instructions?\s+)(.+)/i);
+      if (kwMatch) {
+        name = kwMatch[1].trim();
+        dosage = kwMatch[2].trim();
+        instructions = kwMatch[3].trim();
+      } else {
+        // Pattern 2: Natural speech ("Metformin 500mg twice daily with food")
+        // Step A: Extract dosage (number + unit like mg, milligrams, ml, mcg, etc.)
+        const dosageRegex = /(\d+\.?\d*)\s*(mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|tablets?|capsules?|drops?)/i;
+        const dosageMatch = t.match(dosageRegex);
+
+        if (dosageMatch) {
+          const dosageStart = dosageMatch.index;
+          // Everything before dosage = medication name
+          name = t.substring(0, dosageStart).trim();
+          // The dosage itself
+          dosage = dosageMatch[0].trim();
+          // Everything after dosage = instructions/frequency
+          const afterDosage = t.substring(dosageStart + dosageMatch[0].length).trim();
+          if (afterDosage) instructions = afterDosage;
+        } else {
+          // Pattern 3: No dosage found — try to split on frequency keywords
+          const freqRegex = /\b(once|twice|three times|one time|two times|daily|every\s+(?:morning|night|day|evening)|before|after|with food)\b/i;
+          const freqMatch = t.match(freqRegex);
+          if (freqMatch) {
+            name = t.substring(0, freqMatch.index).trim();
+            instructions = t.substring(freqMatch.index).trim();
+          } else {
+            // Fallback: put everything in the name field
+            name = t;
+          }
+        }
+      }
+
+      // Clean up: remove trailing/leading common filler words from name
+      name = name.replace(/^(tablet|take|my|the|medication|medicine|called|named)\s+/i, '').trim();
+      name = name.replace(/\s+(tablet|capsule)$/i, '').trim();
+
+      // Capitalize first letter of name
+      if (name) name = name.charAt(0).toUpperCase() + name.slice(1);
+
+      // Fill in the form fields
+      document.getElementById('medName').value = name;
+      if (dosage) document.getElementById('medDosage').value = dosage;
+      if (instructions) document.getElementById('medInstructions').value = instructions;
+
+      // Focus the first empty field so the user can verify/correct
+      if (!name) document.getElementById('medName').focus();
+      else if (!dosage) document.getElementById('medDosage').focus();
+      else document.getElementById('medInstructions').focus();
+    }
+
+    // ── QR Code ────────────────────────────────────
+    function generateAndShowQR() {
+      if (medications.length === 0) {
+        alert('Add at least one medication before generating a QR code.');
+        return;
+      }
+
+      // Check that the QR library loaded
+      if (typeof QRCode === 'undefined') {
+        alert('QR code library failed to load. Please check your internet connection and refresh.');
+        return;
+      }
+
+      showScreen('screenQR');
+
+      // Build a compact payload
+      const payload = {
+        t: 'medcoord-emergency',
+        v: 1,
+        ts: Date.now(),
+        m: medications.map(med => {
+          const entry = { n: med.name, d: med.dosage };
+          if (med.instructions) entry.i = med.instructions;
+          return entry;
+        }),
+      };
+
+      // Encode as a URL so any phone camera opens the emergency view directly
+      const base64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+      const baseUrl = window.location.origin + '/emergency.html';
+      const qrData = baseUrl + '#' + base64;
+
+      const canvas = document.getElementById('qrCanvas');
+      QRCode.toCanvas(canvas, qrData, {
+        width: 280,
+        margin: 2,
+        errorCorrectionLevel: 'L',
+        color: { dark: '#0f172a', light: '#ffffff' },
+      }, function(err) {
+        if (err) {
+          console.error('QR generation failed:', err);
+          // Fallback: try with just medication names and dosages (smaller payload)
+          const minimal = {
+            t: 'medcoord-emergency',
+            v: 1,
+            m: medications.map(med => ({ n: med.name, d: med.dosage })),
+          };
+          const minBase64 = btoa(unescape(encodeURIComponent(JSON.stringify(minimal))));
+          QRCode.toCanvas(canvas, baseUrl + '#' + minBase64, {
+            width: 280,
+            margin: 2,
+            errorCorrectionLevel: 'L',
+            color: { dark: '#0f172a', light: '#ffffff' },
+          }, function(err2) {
+            if (err2) {
+              alert('Too many medications for a single QR code. Try removing some entries.');
+            }
+          });
+        }
+      });
+    }
+
+    // ── Drug Interactions ──────────────────────────
+    async function checkInteractions() {
+      if (medications.length < 2) {
+        alert('Add at least two medications to check for interactions.');
+        return;
+      }
+      showLoading('Checking interactions...');
+      try {
+        const names = medications.map(m => m.name);
+        const res = await fetch('/api/drug-interactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ medications: names }),
+        });
+        if (!res.ok) throw new Error('Interaction check failed');
+        const data = await res.json();
+        const body = document.getElementById('interactionsBody');
+        if (!data.interactions || data.interactions.length === 0) {
+          body.innerHTML = '<p class="text-secondary font-semibold">No known interactions found.</p>';
+        } else {
+          body.innerHTML = data.interactions.map(i =>
+            `<div class="py-2 border-b last:border-0">
+              <p class="font-semibold text-danger">${esc(i.pair)}</p>
+              <p class="text-ink/70">${esc(i.description)}</p>
+              <p class="text-sm text-ink/50">Severity: ${esc(i.severity)}</p>
+            </div>`
+          ).join('');
+        }
+        document.getElementById('interactionsResult').classList.remove('hidden');
+      } catch (err) {
+        alert('Could not check interactions. Please try again.');
+        console.error(err);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    // ── Helpers ─────────────────────────────────────
+    function showLoading(text) {
+      document.getElementById('loadingText').textContent = text || 'Processing...';
+      document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+    function hideLoading() {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+    function esc(str) {
+      const el = document.createElement('span');
+      el.textContent = str;
+      return el.innerHTML;
+    }
+
+    // ── PWA Registration ───────────────────────────
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js');
+    }
+
+    // ── Init ───────────────────────────────────────
+    renderMedList();
+  </script>
+</body>
+</html>

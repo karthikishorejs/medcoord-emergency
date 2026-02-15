@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#ef4444" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="MedCoord ER" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='28' fill='%23ef4444'/><text x='90' y='125' font-size='110' text-anchor='middle' fill='white'>🚑</text></svg>" />
+  <link rel="manifest" href="/manifest.json" />
+  <title>Emergency Responder – MedCoord</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            secondary: '#10b981',
+            danger: '#ef4444',
+            surface: '#f8fafc',
+            ink: '#0f172a',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
+    .btn-touch { min-height: 56px; min-width: 56px; font-size: 1.125rem; }
+    #scannerVideo { max-height: 50vh; object-fit: cover; border-radius: 0.75rem; }
+  </style>
+</head>
+<body class="bg-surface text-ink min-h-screen">
+
+  <!-- ============================================ -->
+  <!-- SCANNER VIEW                                 -->
+  <!-- ============================================ -->
+  <section id="scannerView" class="flex flex-col min-h-screen p-6">
+    <header class="text-center mb-6">
+      <p class="text-danger font-bold text-sm uppercase tracking-wide">Emergency Responder</p>
+      <h1 class="text-2xl font-bold mt-1">Scan Patient QR</h1>
+    </header>
+
+    <video id="scannerVideo" autoplay playsinline class="w-full bg-black rounded-2xl mb-4"></video>
+    <canvas id="scannerCanvas" class="hidden"></canvas>
+
+    <div id="scannerError" class="hidden bg-danger/10 text-danger rounded-xl p-4 text-center font-semibold mb-4">
+      Unable to access camera. Please allow camera permissions.
+    </div>
+
+    <p class="text-center text-ink/50 text-lg">Point camera at the patient's MedCoord QR code.</p>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- RESULTS VIEW                                 -->
+  <!-- ============================================ -->
+  <section id="resultsView" class="hidden flex flex-col min-h-screen p-6">
+    <header class="flex items-center gap-3 mb-6">
+      <button onclick="resetScanner()" class="btn-touch flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary text-2xl" aria-label="Scan again">←</button>
+      <div>
+        <p class="text-danger font-bold text-sm uppercase tracking-wide">Emergency Responder</p>
+        <h2 class="text-2xl font-bold">Patient Medications</h2>
+      </div>
+    </header>
+
+    <div id="scanTime" class="bg-danger/10 text-danger rounded-xl p-3 text-center font-semibold mb-4"></div>
+
+    <ul id="medResults" class="space-y-3 flex-1 overflow-y-auto pb-6"></ul>
+
+    <button onclick="resetScanner()"
+      class="btn-touch w-full bg-primary text-white rounded-2xl py-4 font-semibold shadow-lg active:scale-95 transition">
+      Scan Another Patient
+    </button>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- INVALID QR VIEW                              -->
+  <!-- ============================================ -->
+  <section id="invalidView" class="hidden flex flex-col items-center justify-center min-h-screen p-6 gap-6">
+    <div class="text-6xl">⚠️</div>
+    <h2 class="text-2xl font-bold text-danger text-center">Invalid QR Code</h2>
+    <p class="text-lg text-ink/60 text-center max-w-xs">This QR code is not a MedCoord Emergency Card. Please try scanning the correct QR code.</p>
+    <button onclick="resetScanner()"
+      class="btn-touch w-full max-w-xs bg-primary text-white rounded-2xl py-4 font-semibold shadow-lg active:scale-95 transition">
+      Try Again
+    </button>
+  </section>
+
+  <script>
+    let videoStream = null;
+    let scanning = false;
+    let animFrame = null;
+
+    // ── Start scanner ──────────────────────────────
+    async function startScanner() {
+      const video = document.getElementById('scannerVideo');
+      const errEl = document.getElementById('scannerError');
+      errEl.classList.add('hidden');
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        video.srcObject = videoStream;
+        scanning = true;
+        video.addEventListener('loadedmetadata', () => { scanFrame(); });
+      } catch {
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    // ── Scan loop ──────────────────────────────────
+    function scanFrame() {
+      if (!scanning) return;
+      const video = document.getElementById('scannerVideo');
+      const canvas = document.getElementById('scannerCanvas');
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) {
+        animFrame = requestAnimationFrame(scanFrame);
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+
+      if (code && code.data) {
+        scanning = false;
+        stopStream();
+        handleQRData(code.data);
+        return;
+      }
+      animFrame = requestAnimationFrame(scanFrame);
+    }
+
+    // ── Display medication data ─────────────────────
+    function displayMedData(data) {
+      // Support both compact format (t/m/n/d/i) and full format (type/medications/name/dosage/instructions)
+      const isCompact = data.t === 'medcoord-emergency';
+      const isFull = data.type === 'medcoord-emergency';
+      if (!isCompact && !isFull) throw new Error('Not a MedCoord QR');
+
+      // Normalize to a common shape
+      let generated, meds;
+      if (isCompact) {
+        generated = data.ts ? new Date(data.ts).toLocaleString() : 'Unknown';
+        meds = (data.m || []).map(m => ({
+          name: m.n || '',
+          dosage: m.d || '',
+          instructions: m.i || '',
+        }));
+      } else {
+        generated = data.generated ? new Date(data.generated).toLocaleString() : 'Unknown';
+        meds = (data.medications || []).map(m => ({
+          name: m.name || '',
+          dosage: m.dosage || '',
+          instructions: m.instructions || '',
+        }));
+      }
+
+      // Show results
+      stopStream();
+      document.getElementById('scannerView').classList.add('hidden');
+      document.getElementById('resultsView').classList.remove('hidden');
+
+      document.getElementById('scanTime').textContent = `Card generated: ${generated}`;
+
+      const list = document.getElementById('medResults');
+      list.innerHTML = meds.map(m => `
+        <li class="bg-white rounded-2xl p-4 shadow">
+          <p class="font-bold text-lg">${esc(m.name)}</p>
+          <p class="text-ink/70">${esc(m.dosage)}</p>
+          ${m.instructions ? `<p class="text-ink/50 text-sm mt-1">${esc(m.instructions)}</p>` : ''}
+        </li>
+      `).join('');
+    }
+
+    // ── Handle decoded QR (from camera scanner) ──────
+    function handleQRData(raw) {
+      try {
+        // The QR may contain a URL with hash data, or raw JSON
+        let jsonStr = raw;
+        // If it's a URL like https://…/emergency.html#base64data, extract the hash
+        if (raw.includes('/emergency.html#')) {
+          const hash = raw.split('#')[1];
+          jsonStr = decodeURIComponent(escape(atob(hash)));
+        }
+        const data = JSON.parse(jsonStr);
+        displayMedData(data);
+      } catch {
+        document.getElementById('scannerView').classList.add('hidden');
+        document.getElementById('invalidView').classList.remove('hidden');
+      }
+    }
+
+    // ── Reset ──────────────────────────────────────
+    function resetScanner() {
+      document.getElementById('resultsView').classList.add('hidden');
+      document.getElementById('invalidView').classList.add('hidden');
+      document.getElementById('scannerView').classList.remove('hidden');
+      startScanner();
+    }
+
+    // ── Cleanup ────────────────────────────────────
+    function stopStream() {
+      if (videoStream) {
+        videoStream.getTracks().forEach(t => t.stop());
+        videoStream = null;
+      }
+      if (animFrame) cancelAnimationFrame(animFrame);
+    }
+
+    function esc(str) {
+      const el = document.createElement('span');
+      el.textContent = str;
+      return el.innerHTML;
+    }
+
+    // ── Init ───────────────────────────────────────
+    // Check if medication data was passed in the URL hash (from QR scan via phone camera)
+    if (window.location.hash && window.location.hash.length > 1) {
+      try {
+        const base64 = window.location.hash.substring(1);
+        const jsonStr = decodeURIComponent(escape(atob(base64)));
+        const data = JSON.parse(jsonStr);
+        displayMedData(data);
+      } catch {
+        // Invalid hash data — fall back to camera scanner
+        startScanner();
+      }
+    } else {
+      startScanner();
+    }
+  </script>
+</body>
+</html>
