@@ -1,7 +1,7 @@
 {
-  "name": "medcoord-emergency",
+  "name": "kaathu",
   "version": "1.0.0",
-  "description": "MedCoord Emergency Card – a healthcare PWA for medication tracking and emergency QR codes",
+  "description": "Kaathu – a healthcare PWA for medication tracking and emergency QR codes",
   "private": true,
   "scripts": {
     "start": "npx serve public -l 3000",

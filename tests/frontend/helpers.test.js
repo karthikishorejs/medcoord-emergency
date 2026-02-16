@@ -15,10 +15,10 @@ function esc(str) {
 
 // Replicate medication state management
 function createMedStore() {
-  let medications = JSON.parse(localStorage.getItem('medcoord_meds') || '[]');
+  let medications = JSON.parse(localStorage.getItem('kaathu_meds') || '[]');
 
   function saveMeds() {
-    localStorage.setItem('medcoord_meds', JSON.stringify(medications));
+    localStorage.setItem('kaathu_meds', JSON.stringify(medications));
   }
 
   let idCounter = 0;
@@ -40,7 +40,7 @@ function createMedStore() {
 
   function buildQRPayload() {
     return {
-      type: 'medcoord-emergency',
+      type: 'kaathu',
       version: 1,
       generated: new Date().toISOString(),
       medications: medications.map(m => ({
@@ -119,13 +119,13 @@ describe('Medication state management', () => {
   test('persists medications to localStorage', () => {
     const store = createMedStore();
     store.addMedication('Aspirin', '100mg');
-    const stored = JSON.parse(localStorage.getItem('medcoord_meds'));
+    const stored = JSON.parse(localStorage.getItem('kaathu_meds'));
     expect(stored).toHaveLength(1);
     expect(stored[0].name).toBe('Aspirin');
   });
 
   test('loads medications from localStorage', () => {
-    localStorage.setItem('medcoord_meds', JSON.stringify([
+    localStorage.setItem('kaathu_meds', JSON.stringify([
       { id: 1, name: 'Aspirin', dosage: '100mg', instructions: '' },
     ]));
     const store = createMedStore();
@@ -149,7 +149,7 @@ describe('Medication state management', () => {
     store.addMedication('Aspirin', '100mg');
     const id = store.getMedications()[0].id;
     store.removeMedication(id);
-    const stored = JSON.parse(localStorage.getItem('medcoord_meds'));
+    const stored = JSON.parse(localStorage.getItem('kaathu_meds'));
     expect(stored).toHaveLength(0);
   });
 });
@@ -164,7 +164,7 @@ describe('QR payload generation', () => {
     store.addMedication('Metformin', '500mg', 'Take with food');
     const payload = store.buildQRPayload();
 
-    expect(payload.type).toBe('medcoord-emergency');
+    expect(payload.type).toBe('kaathu');
     expect(payload.version).toBe(1);
     expect(payload.generated).toBeDefined();
     expect(new Date(payload.generated)).toBeInstanceOf(Date);
@@ -197,7 +197,7 @@ describe('QR payload generation', () => {
     const store = createMedStore();
     const payload = store.buildQRPayload();
     expect(payload.medications).toEqual([]);
-    expect(payload.type).toBe('medcoord-emergency');
+    expect(payload.type).toBe('kaathu');
   });
 });
 
@@ -206,16 +206,16 @@ describe('QR data validation (emergency responder)', () => {
   function validateQRData(raw) {
     try {
       const data = JSON.parse(raw);
-      if (data.type !== 'medcoord-emergency') return null;
+      if (data.type !== 'kaathu') return null;
       return data;
     } catch {
       return null;
     }
   }
 
-  test('accepts valid MedCoord QR data', () => {
+  test('accepts valid Kaathu QR data', () => {
     const valid = JSON.stringify({
-      type: 'medcoord-emergency',
+      type: 'kaathu',
       version: 1,
       medications: [{ name: 'Aspirin', dosage: '100mg', instructions: '' }],
     });
@@ -223,7 +223,7 @@ describe('QR data validation (emergency responder)', () => {
     expect(validateQRData(valid).medications).toHaveLength(1);
   });
 
-  test('rejects non-MedCoord QR data', () => {
+  test('rejects non-Kaathu QR data', () => {
     const other = JSON.stringify({ type: 'other-app', data: 'hello' });
     expect(validateQRData(other)).toBeNull();
   });

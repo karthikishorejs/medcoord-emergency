@@ -1,4 +1,4 @@
-const CACHE_NAME = 'medcoord-v1';
+const CACHE_NAME = 'kaathu-v1';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

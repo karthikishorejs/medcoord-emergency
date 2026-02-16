@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#2563eb" />
-  <meta name="description" content="MedCoord Emergency Card – digital medication card with QR sharing" />
+  <meta name="description" content="Kaathu – digital medication card with QR sharing" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="MedCoord" />
+  <meta name="apple-mobile-web-app-title" content="Kaathu" />
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='28' fill='%232563eb'/><text x='90' y='125' font-size='110' text-anchor='middle' fill='white'>💊</text></svg>" />
-  <title>MedCoord Emergency Card</title>
+  <title>Kaathu</title>
   <link rel="manifest" href="/manifest.json" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
@@ -62,8 +62,8 @@
   <section id="screenHome" class="screen active flex-col items-center justify-center min-h-screen p-6 gap-6">
     <div class="text-center mb-4">
       <span class="text-6xl" aria-hidden="true">💊</span>
-      <h1 class="text-3xl font-bold mt-2 text-primary">MedCoord</h1>
-      <p class="text-lg text-ink/70 mt-1">Emergency Card</p>
+      <h1 class="text-3xl font-bold mt-2 text-primary">Kaathu</h1>
+      <p class="text-lg text-ink/70 mt-1">Your Medication Companion</p>
     </div>
 
     <button onclick="showScreen('screenToday')"
@@ -394,7 +394,7 @@
   <!-- ============================================ -->
   <script>
     // ── State ──────────────────────────────────────
-    let medications = JSON.parse(localStorage.getItem('medcoord_meds') || '[]');
+    let medications = JSON.parse(localStorage.getItem('kaathu_meds') || '[]');
     let cameraStream = null;
     let extractedMeds = [];
     let cachedInteractions = [];
@@ -471,7 +471,7 @@
 
     // ── Persistence ────────────────────────────────
     function saveMeds() {
-      localStorage.setItem('medcoord_meds', JSON.stringify(medications));
+      localStorage.setItem('kaathu_meds', JSON.stringify(medications));
     }
 
     // ── Medication CRUD ────────────────────────────
@@ -1142,11 +1142,11 @@
     }
 
     function getAdherenceLog() {
-      return JSON.parse(localStorage.getItem('medcoord_adherence_' + getTodayKey()) || '{}');
+      return JSON.parse(localStorage.getItem('kaathu_adherence_' + getTodayKey()) || '{}');
     }
 
     function saveAdherenceLog(log) {
-      localStorage.setItem('medcoord_adherence_' + getTodayKey(), JSON.stringify(log));
+      localStorage.setItem('kaathu_adherence_' + getTodayKey(), JSON.stringify(log));
     }
 
     function calculateStatus(scheduledTime, medId) {
@@ -1336,7 +1336,7 @@
 
       // Build a compact payload
       const payload = {
-        t: 'medcoord-emergency',
+        t: 'kaathu',
         v: 1,
         ts: Date.now(),
         m: medications.map(med => {
@@ -1350,7 +1350,7 @@
       // Encode as a URL so any phone camera opens the emergency view directly
       const base64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
       // Use production Vercel URL for QR codes so they work when scanned on any device
-      const prodUrl = 'https://medcoord-emergency.vercel.app';
+      const prodUrl = 'https://kaathu.vercel.app';
       const origin = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? prodUrl
         : window.location.origin;
@@ -1368,7 +1368,7 @@
           console.error('QR generation failed:', err);
           // Fallback: try with just medication names and dosages (smaller payload)
           const minimal = {
-            t: 'medcoord-emergency',
+            t: 'kaathu',
             v: 1,
             m: medications.map(med => ({ n: med.name, d: med.dosage })),
           };

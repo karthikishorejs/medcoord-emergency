@@ -1,6 +1,6 @@
 {
-  "name": "MedCoord Emergency Card",
-  "short_name": "MedCoord",
+  "name": "Kaathu",
+  "short_name": "Kaathu",
   "description": "Digital emergency medication card with QR code sharing",
   "start_url": "/index.html",
   "display": "standalone",

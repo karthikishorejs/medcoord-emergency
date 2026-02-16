@@ -6,10 +6,10 @@
   <meta name="theme-color" content="#ef4444" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="MedCoord ER" />
+  <meta name="apple-mobile-web-app-title" content="Kaathu ER" />
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='28' fill='%23ef4444'/><text x='90' y='125' font-size='110' text-anchor='middle' fill='white'>🚑</text></svg>" />
   <link rel="manifest" href="/manifest.json" />
-  <title>Emergency Responder – MedCoord</title>
+  <title>Emergency Responder – Kaathu</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
@@ -52,7 +52,7 @@
       Unable to access camera. Please allow camera permissions.
     </div>
 
-    <p class="text-center text-ink/50 text-lg">Point camera at the patient's MedCoord QR code.</p>
+    <p class="text-center text-ink/50 text-lg">Point camera at the patient's Kaathu QR code.</p>
   </section>
 
   <!-- ============================================ -->
@@ -94,7 +94,7 @@
   <section id="invalidView" class="hidden flex flex-col items-center justify-center min-h-screen p-6 gap-6">
     <div class="text-6xl">⚠️</div>
     <h2 class="text-2xl font-bold text-danger text-center">Invalid QR Code</h2>
-    <p class="text-lg text-ink/60 text-center max-w-xs">This QR code is not a MedCoord Emergency Card. Please try scanning the correct QR code.</p>
+    <p class="text-lg text-ink/60 text-center max-w-xs">This QR code is not a Kaathu card. Please try scanning the correct QR code.</p>
     <button onclick="resetScanner()"
       class="btn-touch w-full max-w-xs bg-primary text-white rounded-2xl py-4 font-semibold shadow-lg active:scale-95 transition">
       Try Again
@@ -154,9 +154,9 @@
     // ── Display medication data ─────────────────────
     function displayMedData(data) {
       // Support both compact format (t/m/n/d/i) and full format (type/medications/name/dosage/instructions)
-      const isCompact = data.t === 'medcoord-emergency';
-      const isFull = data.type === 'medcoord-emergency';
-      if (!isCompact && !isFull) throw new Error('Not a MedCoord QR');
+      const isCompact = data.t === 'kaathu';
+      const isFull = data.type === 'kaathu';
+      if (!isCompact && !isFull) throw new Error('Not a Kaathu QR');
 
       // Normalize to a common shape
       let generated, meds;

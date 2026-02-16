@@ -1,4 +1,4 @@
-# MedCoord Emergency Card
+# Kaathu
 
 A healthcare PWA that lets users manage medications and generate emergency QR codes for first responders.
 
@@ -25,7 +25,7 @@ A healthcare PWA that lets users manage medications and generate emergency QR co
 ```bash
 # 1. Clone the repo
 git clone <repo-url>
-cd medcoord-emergency
+cd kaathu
 
 # 2. Install dependencies
 npm install
@@ -45,7 +45,7 @@ npx vercel dev
 ## Project Structure
 
 ```
-medcoord-emergency/
+kaathu/
 ├── api/
 │   ├── extract-prescription.js   Prescription OCR (Claude)
 │   ├── voice-to-med.js           Voice transcription (Deepgram)
