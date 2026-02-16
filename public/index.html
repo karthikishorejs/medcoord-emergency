@@ -479,6 +479,42 @@
       }
     }
 
+    // Infer scheduledTimes from instructions/dosage text when no explicit times are set
+    // "twice daily" → ["08:00", "20:00"], "once daily in the morning" → ["08:00"]
+    function inferScheduledTimes(med) {
+      const text = ((med.instructions || '') + ' ' + (med.dosage || '')).toLowerCase();
+
+      // Already has explicit times
+      if (med.scheduledTimes && med.scheduledTimes.length > 0) return med.scheduledTimes;
+
+      // Has M-A-N pattern
+      if (med.pattern) {
+        const times = patternToScheduledTimes(med.pattern);
+        if (times.length > 0) return times;
+      }
+
+      // Check for specific time-of-day keywords
+      const hasMorning = /\b(morning|breakfast|before food am)\b/i.test(text);
+      const hasAfternoon = /\b(afternoon|lunch|midday|noon)\b/i.test(text);
+      const hasNight = /\b(night|evening|dinner|bedtime|bed time|before sleep|pm)\b/i.test(text);
+
+      if (hasMorning || hasAfternoon || hasNight) {
+        const times = [];
+        if (hasMorning) times.push('08:00');
+        if (hasAfternoon) times.push('13:00');
+        if (hasNight) times.push('20:00');
+        return times;
+      }
+
+      // Check for frequency keywords
+      if (/\b(three times|thrice|3 times|tds|tid)\b/i.test(text)) return ['08:00', '13:00', '20:00'];
+      if (/\b(twice|two times|2 times|bid|bd)\b/i.test(text)) return ['08:00', '20:00'];
+      if (/\b(once|one time|1 time|daily|od|every day)\b/i.test(text)) return ['08:00'];
+
+      // Default: show once daily at morning so it still appears on Today screen
+      return ['08:00'];
+    }
+
     // Convert M-A-N dosing pattern to scheduledTimes array
     // "1-0-1" → ["08:00", "20:00"], "1-1-1" → ["08:00", "13:00", "20:00"]
     function patternToScheduledTimes(pattern) {
@@ -760,11 +796,11 @@
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
       });
 
-      // Gather all scheduled items
+      // Gather all scheduled items (infer times for meds without explicit schedule)
       const items = [];
       medications.forEach(med => {
-        if (!med.scheduledTimes || med.scheduledTimes.length === 0) return;
-        med.scheduledTimes.forEach(time => {
+        const times = inferScheduledTimes(med);
+        times.forEach(time => {
           const statusInfo = calculateStatus(time, med.id);
           items.push({ med, time, ...statusInfo });
         });
