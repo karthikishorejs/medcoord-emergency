@@ -460,13 +460,15 @@
         if (extractedMeds.length === 0) {
           body.innerHTML = '<p class="text-ink/50">No medications detected. Try a clearer photo.</p>';
         } else {
-          body.innerHTML = extractedMeds.map(m =>
-            `<div class="py-2 border-b last:border-0">
+          body.innerHTML = extractedMeds.map(m => {
+            const times = m.pattern ? patternToScheduledTimes(m.pattern) : [];
+            const timeStr = times.length > 0 ? times.map(formatTime12h).join(', ') : '';
+            return `<div class="py-2 border-b last:border-0">
               <p><strong>${esc(m.name)}</strong> — ${esc(m.dosage)}</p>
               ${m.instructions ? `<p class="text-ink/70 text-base">${esc(m.instructions)}</p>` : ''}
-              ${m.pattern ? `<p class="text-ink/40 text-sm">Pattern: ${esc(m.pattern)} (Morning-Afternoon-Night)</p>` : ''}
-            </div>`
-          ).join('');
+              ${m.pattern ? `<p class="text-ink/40 text-sm">Pattern: ${esc(m.pattern)} (M-A-N)${timeStr ? ' → ' + timeStr : ''}</p>` : ''}
+            </div>`;
+          }).join('');
         }
         document.getElementById('extractResult').classList.remove('hidden');
       } catch (err) {
@@ -477,9 +479,28 @@
       }
     }
 
+    // Convert M-A-N dosing pattern to scheduledTimes array
+    // "1-0-1" → ["08:00", "20:00"], "1-1-1" → ["08:00", "13:00", "20:00"]
+    function patternToScheduledTimes(pattern) {
+      if (!pattern) return [];
+      const parts = pattern.split('-').map(Number);
+      if (parts.length !== 3) return [];
+      const times = [];
+      if (parts[0] >= 1) times.push('08:00');  // Morning (before 10 AM)
+      if (parts[1] >= 1) times.push('13:00');  // Afternoon (12–3 PM)
+      if (parts[2] >= 1) times.push('20:00');  // Evening (7–10 PM)
+      return times;
+    }
+
     function importExtracted() {
       extractedMeds.forEach(m => {
-        medications.push({ id: Date.now() + Math.random(), ...m });
+        const med = { id: Date.now() + Math.random(), ...m };
+        // Auto-generate scheduledTimes from M-A-N pattern if present
+        if (m.pattern) {
+          const times = patternToScheduledTimes(m.pattern);
+          if (times.length > 0) med.scheduledTimes = times;
+        }
+        medications.push(med);
       });
       saveMeds();
       extractedMeds = [];
