@@ -166,6 +166,7 @@
           name: m.n || '',
           dosage: m.d || '',
           instructions: m.i || '',
+          condition: m.c || '',
         }));
       } else {
         generated = data.generated ? new Date(data.generated).toLocaleString() : 'Unknown';
@@ -173,6 +174,7 @@
           name: m.name || '',
           dosage: m.dosage || '',
           instructions: m.instructions || '',
+          condition: m.condition || '',
         }));
       }
 
@@ -187,6 +189,7 @@
       list.innerHTML = meds.map(m => `
         <li class="bg-white rounded-2xl p-4 shadow">
           <p class="font-bold text-lg">${esc(m.name)}</p>
+          ${m.condition ? `<p class="text-sm text-primary font-semibold">${esc(m.condition)}</p>` : ''}
           <p class="text-ink/70">${esc(m.dosage)}</p>
           ${m.instructions ? `<p class="text-ink/50 text-sm mt-1">${esc(m.instructions)}</p>` : ''}
         </li>

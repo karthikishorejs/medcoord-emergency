@@ -42,7 +42,11 @@ module.exports = async function handler(req, res) {
 - "Rx" or "℞" = Prescription header (not a medication)
 - "M" in a drug name usually means a Metformin combination (e.g., "Volibo M 0.3/500" = Voglibose 0.3mg + Metformin 500mg)
 - "CV" in a drug name may indicate a cardiovascular formulation (e.g., "Rosuras CV 75/10")
-- If a medication has TWO lines with different doses (e.g., one line says 2mg and the next says 1mg), treat each line as a SEPARATE medication entry
+- CRITICAL: If the same medication name appears on MULTIPLE lines with DIFFERENT doses or DIFFERENT patterns, you MUST create a SEPARATE entry for EACH line. Do NOT merge them.
+  Example: "Glimepiride 2mg 1-0-0" and "Glimepiride 1mg 0-0-1" = TWO separate entries:
+    Entry 1: { "name": "Glimepiride", "dosage": "2mg", "instructions": "Once daily in the morning", "pattern": "1-0-0" }
+    Entry 2: { "name": "Glimepiride", "dosage": "1mg", "instructions": "Once daily at night", "pattern": "0-0-1" }
+  Do NOT combine these into a single entry like "Glimepiride 2mg 1-0-1". Each line on the prescription is its own entry.
 
 ## STEP 2: Read the dosing pattern (RIGHT side of each line)
 CRITICAL: Each medication line has a 3-number pattern written to its RIGHT. This pattern represents Morning-Afternoon-Night dosing. You MUST read the EXACT numbers/marks from the image. DO NOT guess or infer the frequency from the drug name.
@@ -63,11 +67,22 @@ STRICT mapping (use EXACTLY these instructions based on the pattern you read):
 
 If you cannot clearly read the pattern, write "Pattern unclear" in instructions.
 
+## STEP 3: Infer probable medical condition
+For each medication, infer the most likely medical condition it is prescribed for. Use concise labels:
+- Diabetes medications (Metformin, Glimepiride, Voglibose, Sitagliptin, etc.) → "Diabetes"
+- Blood pressure medications (Amlodipine, Telmisartan, Losartan, Ramipril, etc.) → "Hypertension"
+- Cholesterol medications (Atorvastatin, Rosuvastatin) → "Cholesterol"
+- Blood thinners (Aspirin, Clopidogrel, Warfarin) → "Blood Thinner"
+- Acid reflux medications (Pantoprazole, Omeprazole, Rabeprazole) → "Acid Reflux"
+- Thyroid medications (Levothyroxine, Thyronorm) → "Thyroid"
+- Asthma medications (Montelukast, Salbutamol) → "Asthma"
+- If unsure, omit the "condition" field for that medication.
+
 ## OUTPUT FORMAT
 Return ONLY valid JSON:
-{ "medications": [ { "name": "Full medication name", "dosage": "dose with units", "instructions": "frequency from pattern mapping above", "pattern": "X-X-X" } ] }
+{ "medications": [ { "name": "Full medication name", "dosage": "dose with units", "instructions": "frequency from pattern mapping above", "pattern": "X-X-X", "condition": "Probable condition" } ] }
 
-IMPORTANT: The "pattern" field must contain the exact 3-number pattern you read from the image (e.g., "0-0-1"). The "instructions" field must match the strict mapping above for that pattern.
+IMPORTANT: The "pattern" field must contain the exact 3-number pattern you read from the image (e.g., "0-0-1"). The "instructions" field must match the strict mapping above for that pattern. The "condition" field should be the probable medical condition (omit if unsure).
 
 If no medications are found, return { "medications": [] }.`,
             },

@@ -41,6 +41,17 @@
     .screen.active { display: flex; }
     /* Camera viewfinder */
     #cameraPreview { max-height: 50vh; object-fit: cover; border-radius: 0.75rem; }
+    /* Mic button pulse animations */
+    @keyframes micPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+      50% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+    }
+    .mic-idle { animation: micPulse 2s infinite; }
+    @keyframes recordPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+    }
+    .mic-recording { animation: recordPulse 1s infinite; }
   </style>
 </head>
 <body class="bg-surface text-ink min-h-screen">
@@ -80,51 +91,172 @@
   <!-- SCREEN 2 – MEDICATION LIST + ENTRY           -->
   <!-- ============================================ -->
   <section id="screenMedList" class="screen flex-col min-h-screen p-6">
-    <header class="flex items-center gap-3 mb-6">
+    <header class="flex items-center gap-3 mb-4">
       <button onclick="showScreen('screenHome')" class="btn-touch flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary text-2xl" aria-label="Back">←</button>
       <h2 class="text-2xl font-bold">My Medications</h2>
     </header>
 
-    <!-- Medication entry form -->
-    <form id="medForm" onsubmit="addMedication(event)" class="bg-white rounded-2xl p-5 shadow space-y-4 mb-6">
-      <div>
-        <label for="medName" class="block font-semibold mb-1 text-lg">Medication Name</label>
-        <input id="medName" type="text" required placeholder="e.g. Metformin"
-          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+    <!-- ── Voice Hero Section ── -->
+    <div id="voiceHero" class="bg-white rounded-2xl p-6 shadow-lg mb-4 text-center">
+      <p id="voiceHint" class="text-lg text-ink/60 mb-4 font-medium">
+        Tap the mic and say your medication name
+      </p>
+      <button id="voiceMicBtn" onclick="toggleRecording()"
+        class="w-24 h-24 mx-auto rounded-full bg-secondary text-white text-4xl
+               flex items-center justify-center shadow-lg mic-idle
+               active:scale-95 transition-all duration-200
+               focus:outline-none focus:ring-4 focus:ring-secondary/30"
+        aria-label="Tap to record medication">
+        🎤
+      </button>
+      <!-- Recording timer -->
+      <p id="voiceTimer" class="hidden text-danger font-bold text-xl mt-3">
+        ● Recording... <span id="voiceTimerSeconds">0</span>s
+      </p>
+      <!-- Processing spinner -->
+      <div id="voiceProcessing" class="hidden mt-4">
+        <div class="w-8 h-8 mx-auto border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+        <p id="voiceProcessingText" class="text-primary font-semibold mt-2">Converting speech...</p>
       </div>
-      <div>
-        <label for="medDosage" class="block font-semibold mb-1 text-lg">Dosage</label>
-        <input id="medDosage" type="text" required placeholder="e.g. 500 mg twice daily"
-          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
-      </div>
-      <div>
-        <label for="medInstructions" class="block font-semibold mb-1 text-lg">Instructions</label>
-        <input id="medInstructions" type="text" placeholder="e.g. Take with food"
-          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
-      </div>
-      <div>
-        <label for="medSchedule" class="block font-semibold mb-1 text-lg">Schedule Times</label>
-        <input id="medSchedule" type="text" placeholder="e.g. 08:00, 14:00, 20:00"
-          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
-        <p class="text-xs text-ink/40 mt-1">Comma-separated 24h times for daily tracking</p>
-      </div>
+    </div>
 
-      <div class="flex gap-3">
-        <button type="submit"
+    <!-- ── Transcript Preview ── -->
+    <div id="transcriptPreview" class="hidden bg-blue-50 border-2 border-primary/20 rounded-2xl p-5 mb-4">
+      <p class="text-sm font-semibold text-primary mb-2">What I heard:</p>
+      <p id="transcriptText" class="text-lg text-ink font-medium italic"></p>
+      <div class="flex gap-3 mt-4">
+        <button onclick="retryVoice()"
+          class="btn-touch flex-1 bg-white border-2 border-primary text-primary rounded-xl py-3 font-semibold active:scale-95 transition">
+          🔄 Try Again
+        </button>
+        <button onclick="useTranscript()"
           class="btn-touch flex-1 bg-primary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
-          Add
-        </button>
-        <button type="button" onclick="startVoiceInput()"
-          class="btn-touch w-16 bg-secondary text-white rounded-xl flex items-center justify-center active:scale-95 transition" aria-label="Voice input">
-          🎤
+          Use This ✓
         </button>
       </div>
-    </form>
+    </div>
 
-    <!-- Voice status -->
-    <div id="voiceStatus" class="hidden bg-secondary/10 text-secondary rounded-xl p-4 mb-4 text-center">
-      <p class="font-semibold text-lg">🎤 Listening...</p>
-      <p class="text-sm mt-1 text-ink/50">Say: "Metformin, 500 mg, twice daily with food"</p>
+    <!-- ── Review Card (after AI parse) — shows name + dosage + condition ── -->
+    <div id="reviewCard" class="hidden bg-green-50 border-2 border-secondary/30 rounded-2xl p-5 mb-4">
+      <p class="text-sm font-semibold text-secondary mb-3">Is this correct?</p>
+      <div class="space-y-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">💊</span>
+          <p class="text-lg font-bold" id="reviewName">—</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📦</span>
+          <p class="text-base text-ink/70" id="reviewDosage">—</p>
+        </div>
+        <div id="reviewConditionRow" class="flex items-center gap-2">
+          <span class="text-xl">🏥</span>
+          <p class="text-base text-primary font-medium" id="reviewCondition">—</p>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-4">
+        <button onclick="editFromReview()"
+          class="btn-touch flex-1 bg-white border-2 border-secondary text-secondary rounded-xl py-3 font-semibold active:scale-95 transition">
+          ✏️ Edit
+        </button>
+        <button onclick="goToSchedulePicker()"
+          class="btn-touch flex-1 bg-secondary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          Next →
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Parse Error Card ── -->
+    <div id="parseErrorCard" class="hidden bg-red-50 border-2 border-danger/30 rounded-2xl p-5 mb-4">
+      <div class="flex items-start gap-3">
+        <span class="text-3xl flex-shrink-0">😕</span>
+        <div class="flex-1">
+          <p class="text-lg font-bold text-danger">Could not understand that</p>
+          <p class="text-base text-ink/60 mt-1">I heard:</p>
+          <p id="parseErrorTranscript" class="text-base text-ink font-medium italic mt-1 bg-white rounded-lg p-3"></p>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-4">
+        <button onclick="retryVoice()"
+          class="btn-touch flex-1 bg-danger text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          🎤 Try Again
+        </button>
+        <button onclick="typeInsteadFromError()"
+          class="btn-touch flex-1 bg-white border-2 border-danger text-danger rounded-xl py-3 font-semibold active:scale-95 transition">
+          ✏️ Type Instead
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Schedule Time Picker (shown after name+dosage confirmed) ── -->
+    <div id="schedulePicker" class="hidden bg-white rounded-2xl p-5 shadow-lg mb-4">
+      <p class="text-lg font-bold text-ink mb-1" id="schedulePickerTitle">When do you take this?</p>
+      <p class="text-sm text-ink/50 mb-4">Tap all that apply</p>
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <button type="button" onclick="toggleScheduleOption(this, '08:00')"
+          class="schedule-opt flex flex-col items-center gap-1 p-4 rounded-2xl border-2 border-gray-200 bg-gray-50
+                 text-ink/70 font-semibold active:scale-95 transition-all"
+          data-time="08:00">
+          <span class="text-3xl">🌅</span>
+          <span class="text-base">Morning</span>
+          <span class="text-xs text-ink/40">8:00 AM</span>
+        </button>
+        <button type="button" onclick="toggleScheduleOption(this, '13:00')"
+          class="schedule-opt flex flex-col items-center gap-1 p-4 rounded-2xl border-2 border-gray-200 bg-gray-50
+                 text-ink/70 font-semibold active:scale-95 transition-all"
+          data-time="13:00">
+          <span class="text-3xl">☀️</span>
+          <span class="text-base">Afternoon</span>
+          <span class="text-xs text-ink/40">1:00 PM</span>
+        </button>
+        <button type="button" onclick="toggleScheduleOption(this, '20:00')"
+          class="schedule-opt flex flex-col items-center gap-1 p-4 rounded-2xl border-2 border-gray-200 bg-gray-50
+                 text-ink/70 font-semibold active:scale-95 transition-all"
+          data-time="20:00">
+          <span class="text-3xl">🌙</span>
+          <span class="text-base">Night</span>
+          <span class="text-xs text-ink/40">8:00 PM</span>
+        </button>
+      </div>
+      <div class="flex gap-3">
+        <button onclick="skipScheduleAndAdd()"
+          class="btn-touch flex-1 bg-white border-2 border-gray-300 text-ink/50 rounded-xl py-3 font-semibold active:scale-95 transition">
+          Skip
+        </button>
+        <button onclick="confirmWithSchedule()"
+          class="btn-touch flex-1 bg-secondary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          ✓ Add Medication
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Collapsible Manual Form ── -->
+    <div id="manualEntrySection" class="mb-4">
+      <button onclick="toggleManualForm()" type="button"
+        class="w-full flex items-center justify-center gap-2 py-3 text-ink/40 font-semibold text-base">
+        <span class="w-16 h-px bg-ink/20"></span>
+        <span id="manualToggleText">or type it manually</span>
+        <span id="manualToggleArrow" class="transition-transform duration-200">▼</span>
+        <span class="w-16 h-px bg-ink/20"></span>
+      </button>
+
+      <form id="medForm" onsubmit="addMedication(event)"
+        class="hidden bg-white rounded-2xl p-5 shadow space-y-4 mt-2">
+        <div>
+          <label for="medName" class="block font-semibold mb-1 text-lg">Medication Name</label>
+          <input id="medName" type="text" required placeholder="e.g. Metformin"
+            class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+        </div>
+        <div>
+          <label for="medDosage" class="block font-semibold mb-1 text-lg">Dosage</label>
+          <input id="medDosage" type="text" required placeholder="e.g. 500 mg"
+            class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+        </div>
+
+        <button type="submit"
+          class="btn-touch w-full bg-primary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          Next →
+        </button>
+      </form>
     </div>
 
     <!-- Medication list (flash card grid) -->
@@ -255,6 +387,58 @@
 
     let todayRefreshInterval = null;
 
+    // ── Drug → Condition (AI-powered) ──────────────────
+    // In-memory cache: drug name (lowercase) → condition string
+    const conditionCache = {};
+
+    // Synchronous cache-only lookup (returns '' if not cached)
+    function lookupCondition(drugName) {
+      if (!drugName) return '';
+      return conditionCache[drugName.toLowerCase().trim()] || '';
+    }
+
+    // Async: fetch condition for a single drug via AI, with cache
+    async function fetchCondition(drugName) {
+      if (!drugName) return '';
+      const key = drugName.toLowerCase().trim();
+      if (conditionCache[key]) return conditionCache[key];
+      try {
+        const res = await fetch('/api/drug-condition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ medications: [drugName] }),
+        });
+        if (!res.ok) return '';
+        const data = await res.json();
+        const conditions = data.conditions || {};
+        // Cache all returned conditions (API returns exact name keys)
+        for (const [name, cond] of Object.entries(conditions)) {
+          conditionCache[name.toLowerCase().trim()] = cond;
+        }
+        return conditionCache[key] || '';
+      } catch { return ''; }
+    }
+
+    // Async: batch-fetch conditions for multiple drugs in one API call
+    async function fetchConditions(drugNames) {
+      // Filter out already-cached ones
+      const uncached = drugNames.filter(n => !conditionCache[n.toLowerCase().trim()]);
+      if (uncached.length === 0) return;
+      try {
+        const res = await fetch('/api/drug-condition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ medications: uncached }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const conditions = data.conditions || {};
+        for (const [name, cond] of Object.entries(conditions)) {
+          conditionCache[name.toLowerCase().trim()] = cond;
+        }
+      } catch { /* silently fail — conditions are optional */ }
+    }
+
     // ── Navigation ─────────────────────────────────
     function showScreen(id) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -281,20 +465,19 @@
       e.preventDefault();
       const name = document.getElementById('medName').value.trim();
       const dosage = document.getElementById('medDosage').value.trim();
-      const instructions = document.getElementById('medInstructions').value.trim();
-      const scheduleRaw = document.getElementById('medSchedule').value.trim();
       if (!name || !dosage) return;
-      const med = { id: Date.now(), name, dosage, instructions };
-      // Parse schedule times (comma-separated, e.g. "08:00, 20:00")
-      if (scheduleRaw) {
-        const times = scheduleRaw.split(',').map(t => t.trim()).filter(t => /^\d{1,2}:\d{2}$/.test(t));
-        if (times.length > 0) med.scheduledTimes = times.map(t => t.padStart(5, '0'));
+      // Store pending med and show schedule picker
+      currentParsedMed = { name, dosage, condition: '' };
+      // Try to get condition from cache
+      const cached = lookupCondition(name);
+      if (cached) currentParsedMed.condition = cached;
+      // Fetch condition from AI in background
+      if (!currentParsedMed.condition) {
+        fetchCondition(name).then(cond => {
+          if (cond && currentParsedMed) currentParsedMed.condition = cond;
+        });
       }
-      medications.push(med);
-      saveMeds();
-      e.target.reset();
-      renderMedList();
-      checkAndDisplayInteractions();
+      showSchedulePicker(name);
     }
 
     function removeMedication(id) {
@@ -333,8 +516,9 @@
         <li class="bg-white rounded-2xl p-4 shadow-md relative flex flex-col items-center text-center min-h-[120px] justify-center border-l-4 ${borderClass}">
           <button onclick="removeMedication(${m.id})" class="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-danger/10 text-danger text-sm" aria-label="Remove">×</button>
           <p class="font-bold text-base leading-tight mt-1">${esc(m.name)}</p>
+          ${m.condition ? `<p class="text-xs mt-0.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">${esc(m.condition)}</p>` : ''}
           <p class="text-primary font-semibold text-sm mt-1">${esc(m.dosage)}</p>
-          ${m.instructions ? `<p class="text-ink/50 text-xs mt-1">${esc(m.instructions)}</p>` : ''}
+          ${m.scheduledTimes && m.scheduledTimes.length > 0 ? `<p class="text-ink/40 text-xs mt-1">⏰ ${m.scheduledTimes.map(formatTime12h).join(', ')}</p>` : ''}
           ${hasInteraction ? `<p class="text-xs mt-2 px-2 py-1 rounded-lg ${hasSevere ? 'bg-danger/10 text-danger' : 'bg-yellow-50 text-yellow-700'} font-semibold">⚠️ ${esc(otherDrugs.join(', '))}</p>` : ''}
         </li>`;
       }).join('');
@@ -463,8 +647,14 @@
           body.innerHTML = extractedMeds.map(m => {
             const times = m.pattern ? patternToScheduledTimes(m.pattern) : [];
             const timeStr = times.length > 0 ? times.map(formatTime12h).join(', ') : '';
-            return `<div class="py-2 border-b last:border-0">
-              <p><strong>${esc(m.name)}</strong> — ${esc(m.dosage)}</p>
+            const isDuplicate = medications.some(existing =>
+              existing.name.toLowerCase().trim() === m.name.toLowerCase().trim() &&
+              existing.dosage.toLowerCase().trim() === m.dosage.toLowerCase().trim()
+            );
+            const conditionLabel = m.condition || lookupCondition(m.name);
+            return `<div class="py-2 border-b last:border-0 ${isDuplicate ? 'opacity-50' : ''}">
+              <p><strong>${esc(m.name)}</strong> — ${esc(m.dosage)}${isDuplicate ? ' <span class="text-amber-600 text-sm font-semibold">(already exists)</span>' : ''}</p>
+              ${conditionLabel ? `<p class="text-primary/70 text-sm font-medium">For: ${esc(conditionLabel)}</p>` : ''}
               ${m.instructions ? `<p class="text-ink/70 text-base">${esc(m.instructions)}</p>` : ''}
               ${m.pattern ? `<p class="text-ink/40 text-sm">Pattern: ${esc(m.pattern)} (M-A-N)${timeStr ? ' → ' + timeStr : ''}</p>` : ''}
             </div>`;
@@ -529,217 +719,400 @@
     }
 
     function importExtracted() {
+      let imported = 0, skipped = 0;
       extractedMeds.forEach(m => {
+        // Check for duplicate: same name (case-insensitive) AND same dosage
+        const isDuplicate = medications.some(existing =>
+          existing.name.toLowerCase().trim() === m.name.toLowerCase().trim() &&
+          existing.dosage.toLowerCase().trim() === m.dosage.toLowerCase().trim()
+        );
+        if (isDuplicate) { skipped++; return; }
+
         const med = { id: Date.now() + Math.random(), ...m };
+        // Auto-fill condition from cache if OCR didn't provide one
+        if (!med.condition) {
+          const cached = lookupCondition(med.name);
+          if (cached) med.condition = cached;
+        }
         // Auto-generate scheduledTimes from M-A-N pattern if present
         if (m.pattern) {
           const times = patternToScheduledTimes(m.pattern);
           if (times.length > 0) med.scheduledTimes = times;
         }
         medications.push(med);
+        imported++;
       });
       saveMeds();
       extractedMeds = [];
+      // Show feedback if duplicates were skipped
+      if (skipped > 0) {
+        alert(`Imported ${imported} medication(s). Skipped ${skipped} duplicate(s) already in your list.`);
+      }
       showScreen('screenMedList');
       checkAndDisplayInteractions();
+      // Batch-fetch conditions from AI for any meds still missing condition
+      const needsCondition = medications.filter(m => !m.condition).map(m => m.name);
+      if (needsCondition.length > 0) {
+        fetchConditions(needsCondition).then(() => {
+          let updated = false;
+          medications.forEach(m => {
+            if (!m.condition) {
+              const cond = lookupCondition(m.name);
+              if (cond) { m.condition = cond; updated = true; }
+            }
+          });
+          if (updated) { saveMeds(); renderMedList(); }
+        });
+      }
     }
 
-    // ── Voice Input ────────────────────────────────
-    async function startVoiceInput() {
-      const statusEl = document.getElementById('voiceStatus');
+    // ── Schedule Time Picker ──────────────────────
+    let _selectedScheduleTimes = [];
 
-      // Record audio and send to Deepgram via our API
-      statusEl.classList.remove('hidden');
+    function showSchedulePicker(medName) {
+      _selectedScheduleTimes = [];
+      // Reset all schedule option buttons
+      document.querySelectorAll('.schedule-opt').forEach(btn => {
+        btn.classList.remove('border-secondary', 'bg-secondary/10', 'text-secondary');
+        btn.classList.add('border-gray-200', 'bg-gray-50', 'text-ink/70');
+      });
+      document.getElementById('schedulePickerTitle').textContent = `When do you take ${medName}?`;
+      document.getElementById('schedulePicker').classList.remove('hidden');
+      document.getElementById('schedulePicker').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function toggleScheduleOption(btn, time) {
+      const idx = _selectedScheduleTimes.indexOf(time);
+      if (idx === -1) {
+        _selectedScheduleTimes.push(time);
+        btn.classList.remove('border-gray-200', 'bg-gray-50', 'text-ink/70');
+        btn.classList.add('border-secondary', 'bg-secondary/10', 'text-secondary');
+      } else {
+        _selectedScheduleTimes.splice(idx, 1);
+        btn.classList.remove('border-secondary', 'bg-secondary/10', 'text-secondary');
+        btn.classList.add('border-gray-200', 'bg-gray-50', 'text-ink/70');
+      }
+    }
+
+    function confirmWithSchedule() {
+      if (!currentParsedMed) return;
+      const med = {
+        id: Date.now(),
+        name: currentParsedMed.name,
+        dosage: currentParsedMed.dosage,
+      };
+      if (currentParsedMed.condition) med.condition = currentParsedMed.condition;
+      if (_selectedScheduleTimes.length > 0) {
+        med.scheduledTimes = _selectedScheduleTimes.sort();
+      }
+      finalizeAddMed(med);
+    }
+
+    function skipScheduleAndAdd() {
+      if (!currentParsedMed) return;
+      const med = {
+        id: Date.now(),
+        name: currentParsedMed.name,
+        dosage: currentParsedMed.dosage,
+      };
+      if (currentParsedMed.condition) med.condition = currentParsedMed.condition;
+      finalizeAddMed(med);
+    }
+
+    function finalizeAddMed(med) {
+      medications.push(med);
+      saveMeds();
+      renderMedList();
+      checkAndDisplayInteractions();
+
+      // If condition is missing, fetch from AI in background
+      if (!med.condition) {
+        fetchCondition(med.name).then(cond => {
+          if (cond) {
+            const found = medications.find(m => m.id === med.id);
+            if (found && !found.condition) { found.condition = cond; saveMeds(); renderMedList(); }
+          }
+        });
+      }
+
+      // Cache condition
+      if (med.name && med.condition) {
+        conditionCache[med.name.toLowerCase().trim()] = med.condition;
+      }
+
+      // Hide schedule picker and manual form
+      document.getElementById('schedulePicker').classList.add('hidden');
+      document.getElementById('medForm')?.reset();
+      document.getElementById('medForm')?.classList.add('hidden');
+      document.getElementById('manualToggleArrow').style.transform = '';
+
+      // Show success toast
+      showSuccessToast(med.name);
+      resetVoiceState();
+    }
+
+    // ── Manual Form Toggle ──────────────────────
+    function toggleManualForm() {
+      const form = document.getElementById('medForm');
+      const arrow = document.getElementById('manualToggleArrow');
+      if (form.classList.contains('hidden')) {
+        expandManualForm();
+      } else {
+        form.classList.add('hidden');
+        arrow.style.transform = '';
+      }
+    }
+    function expandManualForm() {
+      document.getElementById('medForm').classList.remove('hidden');
+      document.getElementById('manualToggleArrow').style.transform = 'rotate(180deg)';
+    }
+
+    // ── Voice Input (State Machine) ──────────────
+    let voiceState = 'IDLE';
+    let currentTranscript = '';
+    let currentParsedMed = null;
+    let _mediaRecorder = null;
+    let _audioChunks = [];
+    let _recordingTimer = null;
+    let _recordingSeconds = 0;
+
+    function toggleRecording() {
+      if (voiceState === 'RECORDING') {
+        stopRecording();
+      } else if (voiceState === 'IDLE' || voiceState === 'TRANSCRIPT_READY' || voiceState === 'PARSE_ERROR') {
+        startRecording();
+      }
+    }
+
+    async function startRecording() {
+      if (voiceState === 'RECORDING') return;
+      hideAllVoiceCards();
+      voiceState = 'RECORDING';
+      _audioChunks = [];
+      _recordingSeconds = 0;
+
+      // Update mic button to recording state
+      const micBtn = document.getElementById('voiceMicBtn');
+      micBtn.classList.remove('bg-secondary', 'mic-idle');
+      micBtn.classList.add('bg-danger', 'mic-recording');
+      document.getElementById('voiceHint').textContent = 'Listening... tap mic to stop';
+      document.getElementById('voiceTimer').classList.remove('hidden');
+      document.getElementById('voiceTimerSeconds').textContent = '0';
+
+      // Start timer display
+      _recordingTimer = setInterval(() => {
+        _recordingSeconds++;
+        document.getElementById('voiceTimerSeconds').textContent = _recordingSeconds;
+        if (_recordingSeconds >= 15) stopRecording();
+      }, 1000);
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        const chunks = [];
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
-
-        mediaRecorder.onstop = async () => {
+        _mediaRecorder = new MediaRecorder(stream);
+        _mediaRecorder.ondataavailable = e => _audioChunks.push(e.data);
+        _mediaRecorder.onstop = async () => {
           stream.getTracks().forEach(t => t.stop());
-          statusEl.classList.add('hidden');
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64 = reader.result.split(',')[1];
-            showLoading('Transcribing...');
-            try {
-              const res = await fetch('/api/voice-to-med', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ audio: base64 }),
-              });
-              if (!res.ok) throw new Error('Transcription failed');
-              const data = await res.json();
-              await processVoiceTranscript(data.transcript || '');
-            } catch (err) {
-              alert('Voice transcription failed. Please try again.');
-              console.error(err);
-            } finally {
-              hideLoading();
-            }
-          };
-          reader.readAsDataURL(blob);
+          await handleRecordingComplete();
+        };
+        _mediaRecorder.start();
+      } catch {
+        resetVoiceState();
+        const hint = document.getElementById('voiceHint');
+        hint.textContent = 'Microphone access denied. Please allow permissions.';
+        hint.classList.add('text-danger');
+        setTimeout(() => {
+          hint.textContent = 'Tap the mic and say your medication name';
+          hint.classList.remove('text-danger');
+        }, 4000);
+      }
+    }
+
+    function stopRecording() {
+      if (voiceState !== 'RECORDING' || !_mediaRecorder) return;
+      clearInterval(_recordingTimer);
+      document.getElementById('voiceTimer').classList.add('hidden');
+
+      if (_recordingSeconds < 1) {
+        if (_mediaRecorder.stream) _mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        resetVoiceState();
+        document.getElementById('voiceHint').textContent = 'Hold a bit longer! Tap mic and speak.';
+        return;
+      }
+
+      if (_mediaRecorder.state === 'recording') {
+        _mediaRecorder.stop();
+      }
+    }
+
+    async function handleRecordingComplete() {
+      voiceState = 'TRANSCRIBING';
+      const micBtn = document.getElementById('voiceMicBtn');
+      micBtn.classList.remove('bg-danger', 'mic-recording');
+      micBtn.classList.add('bg-gray-300');
+      micBtn.disabled = true;
+      document.getElementById('voiceHint').textContent = '';
+      document.getElementById('voiceProcessing').classList.remove('hidden');
+      document.getElementById('voiceProcessingText').textContent = 'Converting speech to text...';
+
+      const blob = new Blob(_audioChunks, { type: 'audio/webm' });
+      const reader = new FileReader();
+
+      reader.onloadend = async () => {
+        const base64 = reader.result.split(',')[1];
+        try {
+          const res = await fetch('/api/voice-to-med', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audio: base64 }),
+          });
+          if (!res.ok) throw new Error('Transcription failed');
+          const data = await res.json();
+          currentTranscript = data.transcript || '';
+
+          if (!currentTranscript.trim()) {
+            resetVoiceState();
+            document.getElementById('voiceHint').textContent = 'I didn\'t hear anything. Tap mic and try again.';
+            return;
+          }
+
+          // Show transcript preview
+          voiceState = 'TRANSCRIPT_READY';
+          document.getElementById('voiceProcessing').classList.add('hidden');
+          document.getElementById('transcriptText').textContent = currentTranscript;
+          document.getElementById('transcriptPreview').classList.remove('hidden');
+          resetMicButton();
+
+        } catch (err) {
+          console.error('Transcription error:', err);
+          resetVoiceState();
+          const hint = document.getElementById('voiceHint');
+          hint.textContent = 'Transcription failed. Tap mic to try again.';
+          hint.classList.add('text-danger');
+          setTimeout(() => {
+            hint.textContent = 'Tap the mic and say your medication name';
+            hint.classList.remove('text-danger');
+          }, 4000);
+        }
+      };
+      reader.readAsDataURL(blob);
+    }
+
+    async function useTranscript() {
+      if (!currentTranscript) return;
+      voiceState = 'PARSING';
+      document.getElementById('transcriptPreview').classList.add('hidden');
+      document.getElementById('voiceProcessing').classList.remove('hidden');
+      document.getElementById('voiceProcessingText').textContent = 'Understanding your medication...';
+
+      try {
+        const res = await fetch('/api/parse-medication', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: currentTranscript }),
+        });
+        if (!res.ok) throw new Error('Parse failed');
+        const data = await res.json();
+
+        if (!data.name || data.name.trim() === '') throw new Error('No medication name parsed');
+
+        currentParsedMed = {
+          name: data.name || '',
+          dosage: data.dosage || '',
+          condition: data.condition || '',
         };
 
-        mediaRecorder.start();
-        // Record for 5 seconds then stop
-        setTimeout(() => { if (mediaRecorder.state === 'recording') mediaRecorder.stop(); }, 5000);
-      } catch {
-        statusEl.classList.add('hidden');
-        alert('Microphone access denied.');
+        voiceState = 'REVIEW';
+        document.getElementById('voiceProcessing').classList.add('hidden');
+        showReviewCard(currentParsedMed);
+
+      } catch (err) {
+        console.error('Parse error:', err);
+        voiceState = 'PARSE_ERROR';
+        document.getElementById('voiceProcessing').classList.add('hidden');
+        document.getElementById('parseErrorTranscript').textContent = currentTranscript;
+        document.getElementById('parseErrorCard').classList.remove('hidden');
+        resetMicButton();
       }
     }
 
-    // ── Convert spoken number words to digits ──
-    // Handles: "five hundred" → 500, "seventy five" → 75, "one thousand" → 1000
-    function wordsToNumber(str) {
-      const ones = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9,
-        ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16,
-        seventeen:17, eighteen:18, nineteen:19 };
-      const tens = { twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
-      const mults = { hundred:100, thousand:1000 };
-      const words = str.toLowerCase().split(/[\s-]+/);
-      let total = 0, current = 0;
-      for (const w of words) {
-        if (ones[w] !== undefined) { current += ones[w]; }
-        else if (tens[w] !== undefined) { current += tens[w]; }
-        else if (w === 'hundred') { current = (current || 1) * 100; }
-        else if (w === 'thousand') { current = (current || 1) * 1000; total += current; current = 0; }
-        else { return null; } // unrecognized word — not a number
-      }
-      total += current;
-      return total > 0 ? total : null;
+    function showReviewCard(med) {
+      document.getElementById('reviewName').textContent = med.name || '(none)';
+      document.getElementById('reviewDosage').textContent = med.dosage || '(not specified)';
+
+      const condRow = document.getElementById('reviewConditionRow');
+      if (med.condition) {
+        document.getElementById('reviewCondition').textContent = med.condition;
+        condRow.classList.remove('hidden');
+      } else { condRow.classList.add('hidden'); }
+
+      document.getElementById('reviewCard').classList.remove('hidden');
+      resetMicButton();
     }
 
-    // Replace word-form numbers followed by a unit with digit form
-    // e.g. "five hundred mg" → "500 mg", "seventy five milligrams" → "75 milligrams"
-    function convertSpokenNumbers(text) {
-      const unitPattern = '(?:mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|iu|tablets?|capsules?|drops?)';
-      // Match one or more number-words followed by a dosage unit
-      const regex = new RegExp(
-        '((?:(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)[-\\s]*)+)\\s*(' + unitPattern + ')\\b', 'gi'
-      );
-      return text.replace(regex, (match, numWords, unit) => {
-        const num = wordsToNumber(numWords.trim());
-        return num !== null ? num + ' ' + unit : match;
-      });
+    function goToSchedulePicker() {
+      if (!currentParsedMed) return;
+      document.getElementById('reviewCard').classList.add('hidden');
+      showSchedulePicker(currentParsedMed.name);
     }
 
-    async function processVoiceTranscript(transcript) {
-      if (!transcript) return;
+    function editFromReview() {
+      document.getElementById('reviewCard').classList.add('hidden');
+      document.getElementById('medName').value = currentParsedMed.name || '';
+      document.getElementById('medDosage').value = currentParsedMed.dosage || '';
+      expandManualForm();
+      document.getElementById('medName').focus();
+      voiceState = 'IDLE';
+    }
 
-      // ── Parse spoken medication into name / dosage / instructions ──
-      // Deepgram outputs like:
-      //   "Metformin five hundred mg. I need to take twice daily."
-      //   "Take metformin, 500 milligrams, twice a day."
-      //   "Aspirin 75 mg once a day after breakfast."
-      //   "I take amlodipine 5 mg every morning."
+    function typeInsteadFromError() {
+      document.getElementById('parseErrorCard').classList.add('hidden');
+      document.getElementById('medName').value = currentTranscript;
+      expandManualForm();
+      document.getElementById('medName').focus();
+      voiceState = 'IDLE';
+    }
 
-      let t = transcript.trim();
+    function retryVoice() {
+      hideAllVoiceCards();
+      resetVoiceState();
+      setTimeout(() => startRecording(), 300);
+    }
 
-      // Strip trailing period / comma that Deepgram often adds
-      t = t.replace(/[.,!]+$/, '').trim();
+    function hideAllVoiceCards() {
+      document.getElementById('transcriptPreview').classList.add('hidden');
+      document.getElementById('reviewCard').classList.add('hidden');
+      document.getElementById('parseErrorCard').classList.add('hidden');
+      document.getElementById('schedulePicker').classList.add('hidden');
+    }
 
-      // Convert word-form numbers to digits ("five hundred mg" → "500 mg")
-      t = convertSpokenNumbers(t);
+    function resetMicButton() {
+      const micBtn = document.getElementById('voiceMicBtn');
+      micBtn.classList.remove('bg-danger', 'bg-gray-300', 'mic-recording');
+      micBtn.classList.add('bg-secondary', 'mic-idle');
+      micBtn.disabled = false;
+    }
 
-      // Strip leading filler phrases (case-insensitive)
-      t = t.replace(/^(i\s+take|i'm\s+taking|i\s+am\s+taking|i\s+need\s+to\s+take|take|my\s+medication\s+is|my\s+medicine\s+is|medication\s+(?:named?\s+)?|medicine\s+(?:called\s+)?|the\s+medication\s+is)\s+/i, '').trim();
+    function resetVoiceState() {
+      voiceState = 'IDLE';
+      currentTranscript = '';
+      currentParsedMed = null;
+      clearInterval(_recordingTimer);
+      document.getElementById('voiceTimer').classList.add('hidden');
+      document.getElementById('voiceProcessing').classList.add('hidden');
+      const hint = document.getElementById('voiceHint');
+      hint.textContent = 'Tap the mic and say your medication name';
+      hint.classList.remove('text-danger', 'text-secondary');
+      resetMicButton();
+    }
 
-      // Remove mid-sentence filler phrases that Deepgram may insert
-      // e.g. "500 mg. I need to take twice" → "500 mg twice"
-      t = t.replace(/[.,]?\s*(?:i\s+need\s+to\s+take|i\s+take\s+it|i\s+have\s+to\s+take|and\s+i\s+take\s+it|i\s+take\s+this|and\s+take\s+it|need\s+to\s+take)\s*/gi, ' ').trim();
-
-      // Collapse multiple periods/commas into one and normalize spaces
-      t = t.replace(/\s*[.,]\s*[.,]\s*/g, '. ').trim();
-      t = t.replace(/\s{2,}/g, ' ').trim();
-
-      let name = '', dosage = '', instructions = '';
-
-      // Pattern 1: Keyword-based ("medication named X dosage Y instructions Z")
-      const kwMatch = t.match(/(.+?)(?:\s+dosage\s+)(.+?)(?:\s+instructions?\s+)(.+)/i);
-      if (kwMatch) {
-        name = kwMatch[1].trim();
-        dosage = kwMatch[2].trim();
-        instructions = kwMatch[3].trim();
-      } else {
-        // Pattern 2: Comma-separated ("Metformin, 500 mg, twice daily with food")
-        const commaParts = t.split(/\s*,\s*/);
-        if (commaParts.length >= 3) {
-          const dosageCheck = /\d+\.?\d*\s*(mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|iu|tablets?|capsules?|drops?)\b/i;
-          if (dosageCheck.test(commaParts[1])) {
-            name = commaParts[0].trim();
-            dosage = commaParts[1].trim();
-            instructions = commaParts.slice(2).join(', ').trim();
-          }
-        }
-
-        if (!name) {
-          // Pattern 3: Natural speech with dosage number+unit
-          const dosageRegex = /(\d+\.?\d*)\s*(mg|milligrams?|mcg|micrograms?|ml|milliliters?|g|grams?|units?|iu|tablets?|capsules?|drops?)\b/i;
-          const dosageMatch = t.match(dosageRegex);
-
-          if (dosageMatch) {
-            const dosageStart = dosageMatch.index;
-            const dosageEnd = dosageStart + dosageMatch[0].length;
-
-            // Everything before dosage = medication name
-            name = t.substring(0, dosageStart).trim();
-            name = name.replace(/[,\-]+$/, '').trim();
-
-            // The dosage itself
-            dosage = dosageMatch[0].trim();
-
-            // Everything after dosage = instructions/frequency
-            let afterDosage = t.substring(dosageEnd).trim();
-            // Remove leading punctuation
-            afterDosage = afterDosage.replace(/^[.,\-]+\s*/, '').trim();
-            if (afterDosage) instructions = afterDosage;
-          } else {
-            // Pattern 4: No dosage found — split on frequency/instruction keywords
-            const freqRegex = /\b(once|twice|three times|one time|two times|daily|every\s+(?:morning|night|day|evening|hour|\d+\s+hours?)|before\s+(?:meals?|food|breakfast|lunch|dinner)|after\s+(?:meals?|food|breakfast|lunch|dinner)|with\s+(?:food|meals?|water|milk))\b/i;
-            const freqMatch = t.match(freqRegex);
-            if (freqMatch) {
-              name = t.substring(0, freqMatch.index).trim();
-              name = name.replace(/[,\-]+$/, '').trim();
-              instructions = t.substring(freqMatch.index).trim();
-            } else {
-              name = t;
-            }
-          }
-        }
-      }
-
-      // Clean up medication name
-      name = name.replace(/^(tablet|take|my|the|a|an|medication|medicine|called|named)\s+/gi, '').trim();
-      name = name.replace(/\s+(tablet|capsule|pill)s?$/i, '').trim();
-      name = name.replace(/[.,]+$/, '').trim();
-
-      // Clean up dosage
-      dosage = dosage.replace(/[.,]+$/, '').trim();
-
-      // Clean up instructions — remove trailing periods, leading filler
-      instructions = instructions.replace(/^(and\s+|then\s+)/i, '').trim();
-      instructions = instructions.replace(/[.]+$/, '').trim();
-      // Remove filler phrases that may remain at start of instructions
-      instructions = instructions.replace(/^(i\s+need\s+to\s+take\s+(?:it\s+)?|i\s+take\s+(?:it\s+)?)/i, '').trim();
-      // Remove stray "it" left over from mid-sentence filler removal
-      instructions = instructions.replace(/^it\s+/i, '').trim();
-
-      // Capitalize first letter of name
-      if (name) name = name.charAt(0).toUpperCase() + name.slice(1);
-
-      // Fill in the form fields
-      document.getElementById('medName').value = name;
-      document.getElementById('medDosage').value = dosage;
-      document.getElementById('medInstructions').value = instructions;
-
-      // Focus the first empty field so the user can verify/correct
-      if (!name) document.getElementById('medName').focus();
-      else if (!dosage) document.getElementById('medDosage').focus();
-      else document.getElementById('medInstructions').focus();
+    function showSuccessToast(medName) {
+      const hint = document.getElementById('voiceHint');
+      hint.textContent = `✓ "${medName}" added!`;
+      hint.classList.add('text-secondary');
+      setTimeout(() => {
+        hint.textContent = 'Tap the mic and say your medication name';
+        hint.classList.remove('text-secondary');
+      }, 3000);
     }
 
     // ── Today's Medications / Adherence ────────────
@@ -867,8 +1240,8 @@
           <div class="flex items-start justify-between">
             <div class="flex-1">
               <p class="font-bold text-lg">${esc(item.med.name)}</p>
+              ${item.med.condition ? `<p class="text-xs text-primary font-medium">${esc(item.med.condition)}</p>` : ''}
               <p class="text-ink/60 text-base">${esc(item.med.dosage)} — ${formatTime12h(item.time)}</p>
-              ${item.med.instructions ? `<p class="text-ink/40 text-sm mt-0.5">${esc(item.med.instructions)}</p>` : ''}
               ${takenInfo}
             </div>
             <span class="ml-3 px-3 py-1 rounded-lg text-sm font-semibold whitespace-nowrap ${badgeBg} ${badgeText}">${icon} ${badgeLabel}</span>
@@ -901,6 +1274,7 @@
         m: medications.map(med => {
           const entry = { n: med.name, d: med.dosage };
           if (med.instructions) entry.i = med.instructions;
+          if (med.condition) entry.c = med.condition;
           return entry;
         }),
       };
@@ -1001,8 +1375,39 @@
       navigator.serviceWorker.register('/sw.js');
     }
 
+    // ── Pre-fetch condition when typing drug name (debounced AI lookup) ──
+    // Condition is auto-detected and shown on flash card — no text box needed
+    let _conditionDebounce = null;
+    document.getElementById('medName').addEventListener('input', function() {
+      const drugName = this.value.trim();
+      if (!drugName) return;
+      // Check cache first (instant)
+      const cached = lookupCondition(drugName);
+      if (cached) return; // already cached
+      // Debounce the API call — wait 600ms after user stops typing
+      clearTimeout(_conditionDebounce);
+      _conditionDebounce = setTimeout(async () => {
+        await fetchCondition(drugName);
+      }, 600);
+    });
+
     // ── Init ───────────────────────────────────────
     renderMedList();
+
+    // Backfill conditions for existing medications from AI (background)
+    const _medsNeedingCondition = medications.filter(m => !m.condition).map(m => m.name);
+    if (_medsNeedingCondition.length > 0) {
+      fetchConditions(_medsNeedingCondition).then(() => {
+        let updated = false;
+        medications.forEach(m => {
+          if (!m.condition) {
+            const cond = lookupCondition(m.name);
+            if (cond) { m.condition = cond; updated = true; }
+          }
+        });
+        if (updated) { saveMeds(); renderMedList(); }
+      });
+    }
   </script>
 </body>
 </html>
