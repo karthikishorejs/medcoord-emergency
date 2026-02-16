@@ -361,14 +361,20 @@
     </header>
 
     <!-- Today's checklist -->
-    <ul id="todayListContainer" class="space-y-3 flex-1 overflow-y-auto pb-6"></ul>
+    <ul id="todayListContainer" class="space-y-3 flex-1 overflow-y-auto pb-2"></ul>
+
+    <!-- As Needed (PRN) section -->
+    <div id="todayPrnSection" class="hidden mb-4">
+      <p class="text-sm font-semibold text-ink/40 uppercase tracking-wide mb-2 mt-2">💊 As Needed</p>
+      <ul id="todayPrnContainer" class="space-y-2"></ul>
+    </div>
 
     <!-- Empty state -->
     <div id="todayEmptyState" class="flex-1 flex flex-col items-center justify-center text-center gap-3">
-      <p class="text-ink/40 text-lg">No scheduled medications for today.</p>
+      <p class="text-ink/40 text-lg">No medications for today.</p>
       <button onclick="showScreen('screenMedList')"
         class="text-primary font-semibold text-lg underline">
-        Add schedule times in My Medications
+        Add medications
       </button>
     </div>
   </section>
@@ -681,10 +687,13 @@
     // Infer scheduledTimes from instructions/dosage text when no explicit times are set
     // "twice daily" → ["08:00", "20:00"], "once daily in the morning" → ["08:00"]
     function inferScheduledTimes(med) {
-      const text = ((med.instructions || '') + ' ' + (med.dosage || '')).toLowerCase();
-
       // Already has explicit times
       if (med.scheduledTimes && med.scheduledTimes.length > 0) return med.scheduledTimes;
+
+      // PRN-only meds (as needed, no scheduled times) → don't assign times
+      if (med.asNeeded) return [];
+
+      const text = ((med.instructions || '') + ' ' + (med.dosage || '')).toLowerCase();
 
       // Has M-A-N pattern
       if (med.pattern) {
@@ -1180,25 +1189,73 @@
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
       });
 
-      // Gather all scheduled items (infer times for meds without explicit schedule)
+      // Gather scheduled items and PRN-only meds separately
       const items = [];
+      const prnOnlyMeds = [];
       medications.forEach(med => {
         const times = inferScheduledTimes(med);
-        times.forEach(time => {
-          const statusInfo = calculateStatus(time, med.id);
-          items.push({ med, time, ...statusInfo });
-        });
+        if (times.length > 0) {
+          times.forEach(time => {
+            const statusInfo = calculateStatus(time, med.id);
+            items.push({ med, time, ...statusInfo });
+          });
+        } else if (med.asNeeded) {
+          // PRN-only: no scheduled times but marked as-needed
+          prnOnlyMeds.push(med);
+        }
       });
 
       const container = document.getElementById('todayListContainer');
+      const prnSection = document.getElementById('todayPrnSection');
+      const prnContainer = document.getElementById('todayPrnContainer');
       const empty = document.getElementById('todayEmptyState');
 
-      if (items.length === 0) {
+      if (items.length === 0 && prnOnlyMeds.length === 0) {
         container.innerHTML = '';
+        prnSection.classList.add('hidden');
         empty.classList.remove('hidden');
         return;
       }
       empty.classList.add('hidden');
+
+      // Render PRN-only meds
+      if (prnOnlyMeds.length > 0) {
+        prnSection.classList.remove('hidden');
+        prnContainer.innerHTML = prnOnlyMeds.map(med => {
+          const log = getAdherenceLog();
+          const prnKey = med.id + '_prn';
+          const taken = log[prnKey];
+          const borderClass = taken ? 'border-secondary' : 'border-amber-400';
+          const takenInfo = taken
+            ? `<p class="text-xs text-secondary mt-1">(Taken at ${new Date(taken.takenAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })})</p>`
+            : '';
+          const actionBtn = !taken
+            ? `<button onclick="markAsTaken(${med.id}, 'prn')" class="btn-touch mt-2 w-full bg-amber-500 text-white rounded-xl py-2 font-semibold text-base active:scale-95 transition">Take Now</button>`
+            : '';
+          return `
+          <li class="bg-white rounded-2xl p-4 shadow-md border-l-4 ${borderClass}">
+            <div class="flex items-start justify-between">
+              <div class="flex-1">
+                <p class="font-bold text-lg">${esc(med.name)}</p>
+                ${med.condition ? `<p class="text-xs text-primary font-medium">${esc(med.condition)}</p>` : ''}
+                <p class="text-ink/60 text-base">${esc(med.dosage)}</p>
+                ${takenInfo}
+              </div>
+              <span class="ml-3 px-3 py-1 rounded-lg text-sm font-semibold whitespace-nowrap ${taken ? 'bg-secondary/10 text-secondary' : 'bg-amber-50 text-amber-600'}">
+                ${taken ? '✓ Taken' : '💊 PRN'}
+              </span>
+            </div>
+            ${actionBtn}
+          </li>`;
+        }).join('');
+      } else {
+        prnSection.classList.add('hidden');
+      }
+
+      if (items.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
 
       // Sort by scheduled time
       items.sort((a, b) => a.time.localeCompare(b.time));
