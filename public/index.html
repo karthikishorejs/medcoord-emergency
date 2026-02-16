@@ -191,30 +191,38 @@
     <div id="schedulePicker" class="hidden bg-white rounded-2xl p-5 shadow-lg mb-4">
       <p class="text-lg font-bold text-ink mb-1" id="schedulePickerTitle">When do you take this?</p>
       <p class="text-sm text-ink/50 mb-4">Tap all that apply</p>
-      <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="grid grid-cols-4 gap-2 mb-4">
         <button type="button" onclick="toggleScheduleOption(this, '08:00')"
-          class="schedule-opt flex flex-col items-center gap-1 p-4 rounded-2xl border-2 border-gray-200 bg-gray-50
+          class="schedule-opt flex flex-col items-center gap-1 p-3 rounded-2xl border-2 border-gray-200 bg-gray-50
                  text-ink/70 font-semibold active:scale-95 transition-all"
           data-time="08:00">
-          <span class="text-3xl">🌅</span>
-          <span class="text-base">Morning</span>
-          <span class="text-xs text-ink/40">8:00 AM</span>
+          <span class="text-2xl">🌅</span>
+          <span class="text-sm">Morning</span>
+          <span class="text-xs text-ink/40">8 AM</span>
         </button>
         <button type="button" onclick="toggleScheduleOption(this, '13:00')"
-          class="schedule-opt flex flex-col items-center gap-1 p-4 rounded-2xl border-2 border-gray-200 bg-gray-50
+          class="schedule-opt flex flex-col items-center gap-1 p-3 rounded-2xl border-2 border-gray-200 bg-gray-50
                  text-ink/70 font-semibold active:scale-95 transition-all"
           data-time="13:00">
-          <span class="text-3xl">☀️</span>
-          <span class="text-base">Afternoon</span>
-          <span class="text-xs text-ink/40">1:00 PM</span>
+          <span class="text-2xl">☀️</span>
+          <span class="text-sm">Afternoon</span>
+          <span class="text-xs text-ink/40">1 PM</span>
         </button>
         <button type="button" onclick="toggleScheduleOption(this, '20:00')"
-          class="schedule-opt flex flex-col items-center gap-1 p-4 rounded-2xl border-2 border-gray-200 bg-gray-50
+          class="schedule-opt flex flex-col items-center gap-1 p-3 rounded-2xl border-2 border-gray-200 bg-gray-50
                  text-ink/70 font-semibold active:scale-95 transition-all"
           data-time="20:00">
-          <span class="text-3xl">🌙</span>
-          <span class="text-base">Night</span>
-          <span class="text-xs text-ink/40">8:00 PM</span>
+          <span class="text-2xl">🌙</span>
+          <span class="text-sm">Night</span>
+          <span class="text-xs text-ink/40">8 PM</span>
+        </button>
+        <button type="button" onclick="toggleScheduleOption(this, 'as-needed')"
+          class="schedule-opt flex flex-col items-center gap-1 p-3 rounded-2xl border-2 border-gray-200 bg-gray-50
+                 text-ink/70 font-semibold active:scale-95 transition-all"
+          data-time="as-needed">
+          <span class="text-2xl">💊</span>
+          <span class="text-sm">As Needed</span>
+          <span class="text-xs text-ink/40">PRN</span>
         </button>
       </div>
       <div class="flex gap-3">
@@ -519,6 +527,7 @@
           ${m.condition ? `<p class="text-xs mt-0.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">${esc(m.condition)}</p>` : ''}
           <p class="text-primary font-semibold text-sm mt-1">${esc(m.dosage)}</p>
           ${m.scheduledTimes && m.scheduledTimes.length > 0 ? `<p class="text-ink/40 text-xs mt-1">⏰ ${m.scheduledTimes.map(formatTime12h).join(', ')}</p>` : ''}
+          ${m.asNeeded ? `<p class="text-xs mt-0.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">As Needed</p>` : ''}
           ${hasInteraction ? `<p class="text-xs mt-2 px-2 py-1 rounded-lg ${hasSevere ? 'bg-danger/10 text-danger' : 'bg-yellow-50 text-yellow-700'} font-semibold">⚠️ ${esc(otherDrugs.join(', '))}</p>` : ''}
         </li>`;
       }).join('');
@@ -802,9 +811,11 @@
         dosage: currentParsedMed.dosage,
       };
       if (currentParsedMed.condition) med.condition = currentParsedMed.condition;
-      if (_selectedScheduleTimes.length > 0) {
-        med.scheduledTimes = _selectedScheduleTimes.sort();
-      }
+      // Separate "as-needed" from actual times
+      const hasAsNeeded = _selectedScheduleTimes.includes('as-needed');
+      const actualTimes = _selectedScheduleTimes.filter(t => t !== 'as-needed').sort();
+      if (actualTimes.length > 0) med.scheduledTimes = actualTimes;
+      if (hasAsNeeded) med.asNeeded = true;
       finalizeAddMed(med);
     }
 
