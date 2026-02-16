@@ -55,6 +55,11 @@
       <p class="text-lg text-ink/70 mt-1">Emergency Card</p>
     </div>
 
+    <button onclick="showScreen('screenToday')"
+      class="btn-touch w-full max-w-xs bg-amber-500 text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
+      Today's Medications
+    </button>
+
     <button onclick="showScreen('screenMedList')"
       class="btn-touch w-full max-w-xs bg-primary text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
       My Medications
@@ -96,6 +101,12 @@
         <label for="medInstructions" class="block font-semibold mb-1 text-lg">Instructions</label>
         <input id="medInstructions" type="text" placeholder="e.g. Take with food"
           class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+      </div>
+      <div>
+        <label for="medSchedule" class="block font-semibold mb-1 text-lg">Schedule Times</label>
+        <input id="medSchedule" type="text" placeholder="e.g. 08:00, 14:00, 20:00"
+          class="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-lg focus:border-primary focus:outline-none" />
+        <p class="text-xs text-ink/40 mt-1">Comma-separated 24h times for daily tracking</p>
       </div>
 
       <div class="flex gap-3">
@@ -198,6 +209,31 @@
   </section>
 
   <!-- ============================================ -->
+  <!-- SCREEN 5 – TODAY'S MEDICATIONS               -->
+  <!-- ============================================ -->
+  <section id="screenToday" class="screen flex-col min-h-screen p-6">
+    <header class="flex items-center gap-3 mb-4">
+      <button onclick="showScreen('screenHome')" class="btn-touch flex items-center justify-center w-14 h-14 rounded-xl bg-primary/10 text-primary text-2xl" aria-label="Back">←</button>
+      <div>
+        <h2 class="text-2xl font-bold">Today's Medications</h2>
+        <p id="todayDate" class="text-sm text-ink/50 font-semibold"></p>
+      </div>
+    </header>
+
+    <!-- Today's checklist -->
+    <ul id="todayListContainer" class="space-y-3 flex-1 overflow-y-auto pb-6"></ul>
+
+    <!-- Empty state -->
+    <div id="todayEmptyState" class="flex-1 flex flex-col items-center justify-center text-center gap-3">
+      <p class="text-ink/40 text-lg">No scheduled medications for today.</p>
+      <button onclick="showScreen('screenMedList')"
+        class="text-primary font-semibold text-lg underline">
+        Add schedule times in My Medications
+      </button>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
   <!-- LOADING OVERLAY                              -->
   <!-- ============================================ -->
   <div id="loadingOverlay" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -217,12 +253,22 @@
     let extractedMeds = [];
     let cachedInteractions = [];
 
+    let todayRefreshInterval = null;
+
     // ── Navigation ─────────────────────────────────
     function showScreen(id) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
       if (id === 'screenMedList') renderMedList();
       if (id === 'screenCamera') initCamera();
+      if (id === 'screenToday') {
+        renderTodayList();
+        // Auto-refresh every 60s so status badges update live
+        if (todayRefreshInterval) clearInterval(todayRefreshInterval);
+        todayRefreshInterval = setInterval(renderTodayList, 60000);
+      } else {
+        if (todayRefreshInterval) { clearInterval(todayRefreshInterval); todayRefreshInterval = null; }
+      }
     }
 
     // ── Persistence ────────────────────────────────
@@ -236,8 +282,15 @@
       const name = document.getElementById('medName').value.trim();
       const dosage = document.getElementById('medDosage').value.trim();
       const instructions = document.getElementById('medInstructions').value.trim();
+      const scheduleRaw = document.getElementById('medSchedule').value.trim();
       if (!name || !dosage) return;
-      medications.push({ id: Date.now(), name, dosage, instructions });
+      const med = { id: Date.now(), name, dosage, instructions };
+      // Parse schedule times (comma-separated, e.g. "08:00, 20:00")
+      if (scheduleRaw) {
+        const times = scheduleRaw.split(',').map(t => t.trim()).filter(t => /^\d{1,2}:\d{2}$/.test(t));
+        if (times.length > 0) med.scheduledTimes = times.map(t => t.padStart(5, '0'));
+      }
+      medications.push(med);
       saveMeds();
       e.target.reset();
       renderMedList();
@@ -630,6 +683,142 @@
       if (!name) document.getElementById('medName').focus();
       else if (!dosage) document.getElementById('medDosage').focus();
       else document.getElementById('medInstructions').focus();
+    }
+
+    // ── Today's Medications / Adherence ────────────
+    function getTodayKey() {
+      const d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function getAdherenceLog() {
+      return JSON.parse(localStorage.getItem('medcoord_adherence_' + getTodayKey()) || '{}');
+    }
+
+    function saveAdherenceLog(log) {
+      localStorage.setItem('medcoord_adherence_' + getTodayKey(), JSON.stringify(log));
+    }
+
+    function calculateStatus(scheduledTime, medId) {
+      const log = getAdherenceLog();
+      const key = medId + '_' + scheduledTime;
+      if (log[key]) {
+        return { status: 'taken', takenAt: log[key].takenAt };
+      }
+      const now = new Date();
+      const [h, m] = scheduledTime.split(':').map(Number);
+      const scheduled = new Date(now);
+      scheduled.setHours(h, m, 0, 0);
+      const diffMin = (scheduled - now) / 60000; // positive = future, negative = past
+
+      if (diffMin <= -15) return { status: 'overdue' };
+      if (diffMin >= -15 && diffMin <= 15) return { status: 'due-now' };
+      if (diffMin > 15 && diffMin <= 60) return { status: 'due-soon', minutes: Math.round(diffMin) };
+      return { status: 'upcoming' };
+    }
+
+    function markAsTaken(medId, scheduledTime) {
+      const log = getAdherenceLog();
+      const key = medId + '_' + scheduledTime;
+      log[key] = { status: 'taken', takenAt: new Date().toISOString() };
+      saveAdherenceLog(log);
+      renderTodayList();
+    }
+
+    function formatTime12h(time24) {
+      const [h, m] = time24.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+    }
+
+    function renderTodayList() {
+      // Set today's date header
+      const today = new Date();
+      document.getElementById('todayDate').textContent = today.toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+      });
+
+      // Gather all scheduled items
+      const items = [];
+      medications.forEach(med => {
+        if (!med.scheduledTimes || med.scheduledTimes.length === 0) return;
+        med.scheduledTimes.forEach(time => {
+          const statusInfo = calculateStatus(time, med.id);
+          items.push({ med, time, ...statusInfo });
+        });
+      });
+
+      const container = document.getElementById('todayListContainer');
+      const empty = document.getElementById('todayEmptyState');
+
+      if (items.length === 0) {
+        container.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      // Sort by scheduled time
+      items.sort((a, b) => a.time.localeCompare(b.time));
+
+      container.innerHTML = items.map(item => {
+        let borderClass, badgeBg, badgeText, badgeLabel, icon;
+        switch (item.status) {
+          case 'taken':
+            borderClass = 'border-secondary';
+            badgeBg = 'bg-secondary/10'; badgeText = 'text-secondary';
+            const takenTime = new Date(item.takenAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            badgeLabel = 'Taken';
+            icon = '✓';
+            break;
+          case 'due-now':
+            borderClass = 'border-amber-500';
+            badgeBg = 'bg-amber-50'; badgeText = 'text-amber-700';
+            badgeLabel = 'Due now';
+            icon = '⚠️';
+            break;
+          case 'due-soon':
+            borderClass = 'border-amber-500';
+            badgeBg = 'bg-amber-50'; badgeText = 'text-amber-700';
+            badgeLabel = 'Due in ' + item.minutes + ' min';
+            icon = '⏳';
+            break;
+          case 'overdue':
+            borderClass = 'border-danger';
+            badgeBg = 'bg-danger/10'; badgeText = 'text-danger';
+            badgeLabel = 'Overdue';
+            icon = '❗';
+            break;
+          default: // upcoming
+            borderClass = 'border-gray-300';
+            badgeBg = 'bg-gray-100'; badgeText = 'text-ink/50';
+            badgeLabel = 'Upcoming';
+            icon = '⏰';
+        }
+
+        const takenInfo = item.status === 'taken'
+          ? `<p class="text-xs text-secondary mt-1">(Taken at ${new Date(item.takenAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })})</p>`
+          : '';
+
+        const actionBtn = item.status !== 'taken'
+          ? `<button onclick="markAsTaken(${item.med.id}, '${item.time}')" class="btn-touch mt-2 w-full bg-secondary text-white rounded-xl py-2 font-semibold text-base active:scale-95 transition">Mark as Taken</button>`
+          : '';
+
+        return `
+        <li class="bg-white rounded-2xl p-4 shadow-md border-l-4 ${borderClass}">
+          <div class="flex items-start justify-between">
+            <div class="flex-1">
+              <p class="font-bold text-lg">${esc(item.med.name)}</p>
+              <p class="text-ink/60 text-base">${esc(item.med.dosage)} — ${formatTime12h(item.time)}</p>
+              ${item.med.instructions ? `<p class="text-ink/40 text-sm mt-0.5">${esc(item.med.instructions)}</p>` : ''}
+              ${takenInfo}
+            </div>
+            <span class="ml-3 px-3 py-1 rounded-lg text-sm font-semibold whitespace-nowrap ${badgeBg} ${badgeText}">${icon} ${badgeLabel}</span>
+          </div>
+          ${actionBtn}
+        </li>`;
+      }).join('');
     }
 
     // ── QR Code ────────────────────────────────────
