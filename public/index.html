@@ -81,7 +81,7 @@
       Scan Prescription
     </button>
 
-    <button onclick="generateAndShowQR()"
+    <button onclick="medications.length === 0 ? alert('Add at least one medication first.') : showScreen('screenQR')"
       class="btn-touch w-full max-w-xs bg-danger text-white rounded-2xl px-6 py-4 font-semibold shadow-lg active:scale-95 transition">
       Show Emergency QR
     </button>
@@ -363,6 +363,7 @@
     <div class="bg-white rounded-3xl p-6 shadow-lg">
       <canvas id="qrCanvas"></canvas>
     </div>
+    <p id="qrLastUpdated" class="text-xs text-ink/40 -mt-4"></p>
     <p class="text-ink/60 text-center text-lg max-w-xs">Show this QR code to an emergency responder so they can see your medications.</p>
 
     <button onclick="checkInteractions()"
@@ -588,6 +589,7 @@
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
       if (id === 'screenMedList') { renderMedList(); renderInteractionSummary(); }
+      if (id === 'screenQR') renderQRCode();
       if (id === 'screenCamera') initCamera();
       if (id === 'screenToday') {
         renderTodayList();
@@ -630,6 +632,7 @@
       renderMedList();
       invalidateInteractionCache();
       checkAndDisplayInteractions();
+      renderQRCode();
     }
 
     function renderMedList() {
@@ -1123,6 +1126,7 @@
       showScreen('screenMedList');
       invalidateInteractionCache();
       checkAndDisplayInteractions();
+      renderQRCode();
       // Batch-fetch conditions from AI for any meds still missing condition
       const needsCondition = medications.filter(m => !m.condition).map(m => m.name);
       if (needsCondition.length > 0) {
@@ -1134,7 +1138,7 @@
               if (cond) { m.condition = cond; updated = true; }
             }
           });
-          if (updated) { saveMeds(); renderMedList(); }
+          if (updated) { saveMeds(); renderMedList(); renderQRCode(); }
         });
       }
     }
@@ -1206,7 +1210,7 @@
         fetchCondition(med.name).then(cond => {
           if (cond) {
             const found = medications.find(m => m.id === med.id);
-            if (found && !found.condition) { found.condition = cond; saveMeds(); renderMedList(); }
+            if (found && !found.condition) { found.condition = cond; saveMeds(); renderMedList(); renderQRCode(); }
           }
         });
       }
@@ -1225,6 +1229,7 @@
       // Show success toast
       showSuccessToast(med.name);
       resetVoiceState();
+      renderQRCode();
     }
 
     // ── Manual Form Toggle ──────────────────────
@@ -1676,19 +1681,9 @@
     }
 
     // ── QR Code ────────────────────────────────────
-    function generateAndShowQR() {
-      if (medications.length === 0) {
-        alert('Add at least one medication before generating a QR code.');
-        return;
-      }
-
-      // Check that the QR library loaded
-      if (typeof QRCode === 'undefined') {
-        alert('QR code library failed to load. Please check your internet connection and refresh.');
-        return;
-      }
-
-      showScreen('screenQR');
+    function renderQRCode() {
+      // Silently skip if no meds or QR library not loaded
+      if (medications.length === 0 || typeof QRCode === 'undefined') return;
 
       // Auto-check interactions if not cached
       if (cachedInteractions.length === 0 && medications.length >= 2) {
@@ -1759,6 +1754,22 @@
           });
         }
       });
+
+      // Update timestamp
+      const ts = document.getElementById('qrLastUpdated');
+      if (ts) ts.textContent = 'Updated at ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    function generateAndShowQR() {
+      if (medications.length === 0) {
+        alert('Add at least one medication before generating a QR code.');
+        return;
+      }
+      if (typeof QRCode === 'undefined') {
+        alert('QR code library failed to load. Please check your internet connection and refresh.');
+        return;
+      }
+      showScreen('screenQR');
     }
 
     // ── Drug Interactions (QR screen) ───────────────
