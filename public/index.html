@@ -267,8 +267,37 @@
       </form>
     </div>
 
+    <!-- Drug Interaction Summary Card -->
+    <div id="interactionSummaryCard" class="hidden mb-4">
+      <!-- Loading state -->
+      <div id="interactionSummaryLoading" class="hidden bg-blue-50 border-2 border-primary/20 rounded-2xl p-4 flex items-center gap-3">
+        <div class="w-6 h-6 border-3 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+        <p class="text-primary font-semibold">Checking drug interactions...</p>
+      </div>
+      <!-- Results state -->
+      <div id="interactionSummaryResults" class="hidden rounded-2xl p-5 shadow-lg border-2">
+        <div class="flex items-start gap-3">
+          <span id="summaryIcon" class="text-3xl flex-shrink-0"></span>
+          <div class="flex-1">
+            <p id="summaryTitle" class="font-bold text-lg"></p>
+            <p id="summaryBreakdown" class="text-sm mt-1 text-ink/60"></p>
+          </div>
+        </div>
+        <button onclick="showAllInteractionsModal()"
+          id="summaryReviewBtn"
+          class="btn-touch w-full mt-3 bg-white border-2 rounded-xl py-3 font-semibold text-base active:scale-95 transition">
+          Review All Interactions
+        </button>
+      </div>
+      <!-- Clean state (no interactions) -->
+      <div id="interactionSummaryClean" class="hidden bg-green-50 border-2 border-secondary/20 rounded-2xl p-4 flex items-center gap-3">
+        <span class="text-2xl">✅</span>
+        <p class="text-secondary font-semibold">No drug interactions found</p>
+      </div>
+    </div>
+
     <!-- Medication list (flash card grid) -->
-    <ul id="medListContainer" class="grid grid-cols-2 gap-3 flex-1 overflow-y-auto pb-6"></ul>
+    <ul id="medListContainer" class="grid grid-cols-2 gap-3 items-start flex-1 overflow-y-auto pb-6"></ul>
 
     <!-- Empty state -->
     <div id="emptyState" class="flex-1 flex items-center justify-center text-ink/40 text-lg">
@@ -390,6 +419,70 @@
   </div>
 
   <!-- ============================================ -->
+  <!-- INTERACTION DETAIL MODAL                     -->
+  <!-- ============================================ -->
+  <div id="interactionModal" class="hidden fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-6">
+    <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl">
+      <div class="sticky top-0 bg-white rounded-t-3xl border-b border-gray-100 p-5 flex items-center justify-between">
+        <h3 id="modalTitle" class="text-xl font-bold">Interaction Details</h3>
+        <button onclick="closeInteractionModal()"
+          class="btn-touch w-12 h-12 flex items-center justify-center rounded-full bg-gray-100 text-ink text-xl"
+          aria-label="Close">×</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div id="modalSeverityBadge" class="flex items-center gap-2">
+          <span id="modalSeverityIcon" class="text-2xl"></span>
+          <span id="modalSeverityText" class="text-lg font-bold px-3 py-1 rounded-full"></span>
+        </div>
+        <div class="bg-gray-50 rounded-xl p-4">
+          <p class="text-sm font-semibold text-ink/50 mb-1">Interacting Medications</p>
+          <p id="modalPair" class="text-lg font-bold"></p>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-ink/50 mb-1">Description</p>
+          <p id="modalDescription" class="text-base text-ink/80 leading-relaxed"></p>
+        </div>
+        <div class="bg-blue-50 rounded-xl p-4">
+          <p class="text-sm font-semibold text-primary mb-2">Recommendations</p>
+          <ul id="modalRecommendations" class="text-sm text-ink/70 space-y-1 list-disc list-inside"></ul>
+        </div>
+        <div class="bg-gray-50 rounded-xl p-3">
+          <p class="text-xs text-ink/40 leading-snug">
+            This information is for reference only. Always consult your doctor or pharmacist about drug interactions.
+          </p>
+        </div>
+      </div>
+      <div class="sticky bottom-0 bg-white border-t border-gray-100 p-5">
+        <button onclick="closeInteractionModal()"
+          class="btn-touch w-full bg-primary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- ALL INTERACTIONS MODAL                       -->
+  <!-- ============================================ -->
+  <div id="allInteractionsModal" class="hidden fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-6">
+    <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[85vh] overflow-y-auto shadow-2xl">
+      <div class="sticky top-0 bg-white rounded-t-3xl border-b border-gray-100 p-5 flex items-center justify-between">
+        <h3 class="text-xl font-bold">All Drug Interactions</h3>
+        <button onclick="closeAllInteractionsModal()"
+          class="btn-touch w-12 h-12 flex items-center justify-center rounded-full bg-gray-100 text-ink text-xl"
+          aria-label="Close">×</button>
+      </div>
+      <div id="allInteractionsBody" class="p-5 space-y-3"></div>
+      <div class="sticky bottom-0 bg-white border-t border-gray-100 p-5">
+        <button onclick="closeAllInteractionsModal()"
+          class="btn-touch w-full bg-primary text-white rounded-xl py-3 font-semibold active:scale-95 transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
   <!-- APPLICATION LOGIC                            -->
   <!-- ============================================ -->
   <script>
@@ -398,8 +491,45 @@
     let cameraStream = null;
     let extractedMeds = [];
     let cachedInteractions = [];
+    let interactionCheckInProgress = false;
+    const INTERACTION_CACHE_KEY = 'kaathu_interactions';
+    const INTERACTION_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
     let todayRefreshInterval = null;
+
+    // ── Interaction Cache (localStorage + 24h expiry) ──
+    function getMedFingerprint() {
+      return medications.map(m => m.name.toLowerCase().trim()).sort().join('|');
+    }
+
+    function loadCachedInteractions() {
+      try {
+        const raw = localStorage.getItem(INTERACTION_CACHE_KEY);
+        if (!raw) return [];
+        const cached = JSON.parse(raw);
+        if (Date.now() - cached.timestamp > INTERACTION_CACHE_TTL) {
+          localStorage.removeItem(INTERACTION_CACHE_KEY);
+          return [];
+        }
+        if (cached.medKey !== getMedFingerprint()) {
+          localStorage.removeItem(INTERACTION_CACHE_KEY);
+          return [];
+        }
+        return cached.interactions || [];
+      } catch { return []; }
+    }
+
+    function saveCachedInteractions(interactions) {
+      localStorage.setItem(INTERACTION_CACHE_KEY, JSON.stringify({
+        timestamp: Date.now(),
+        medKey: getMedFingerprint(),
+        interactions: interactions,
+      }));
+    }
+
+    function invalidateInteractionCache() {
+      localStorage.removeItem(INTERACTION_CACHE_KEY);
+    }
 
     // ── Drug → Condition (AI-powered) ──────────────────
     // In-memory cache: drug name (lowercase) → condition string
@@ -457,7 +587,7 @@
     function showScreen(id) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
-      if (id === 'screenMedList') renderMedList();
+      if (id === 'screenMedList') { renderMedList(); renderInteractionSummary(); }
       if (id === 'screenCamera') initCamera();
       if (id === 'screenToday') {
         renderTodayList();
@@ -498,6 +628,7 @@
       medications = medications.filter(m => m.id !== id);
       saveMeds();
       renderMedList();
+      invalidateInteractionCache();
       checkAndDisplayInteractions();
     }
 
@@ -515,37 +646,113 @@
         const medInteractions = cachedInteractions.filter(i =>
           i.pair.toLowerCase().includes(m.name.toLowerCase())
         );
-        const hasInteraction = medInteractions.length > 0;
+        const count = medInteractions.length;
         const hasSevere = medInteractions.some(i => i.severity === 'Severe');
-        const borderClass = hasInteraction
+        const hasModerate = medInteractions.some(i => i.severity === 'Moderate');
+        const borderClass = count > 0
           ? (hasSevere ? 'border-danger' : 'border-yellow-500')
           : 'border-primary';
-        // Get the other drug names involved
-        const otherDrugs = medInteractions.map(i => {
-          const parts = i.pair.split(' + ');
-          return parts.find(p => p.toLowerCase() !== m.name.toLowerCase()) || parts[0];
-        });
+
+        // Interaction count badge (top-left)
+        let badgeHtml = '';
+        if (count > 0) {
+          const badgeBg = hasSevere ? 'bg-danger' : (hasModerate ? 'bg-yellow-500' : 'bg-yellow-400');
+          badgeHtml = `<span class="absolute top-2 left-2 ${badgeBg} text-white text-xs font-bold px-2 py-1 rounded-full leading-none">⚠️ ${count}</span>`;
+        } else if (cachedInteractions.length > 0) {
+          badgeHtml = `<span class="absolute top-2 left-2 bg-secondary text-white text-xs font-bold px-2 py-1 rounded-full leading-none">✓</span>`;
+        }
+
+        // Expandable interaction section
+        let expandHtml = '';
+        if (count > 0) {
+          const items = medInteractions.map((interaction, idx) => {
+            const otherDrug = interaction.pair.split(' + ')
+              .find(p => p.toLowerCase() !== m.name.toLowerCase()) || interaction.pair.split(' + ')[0];
+            const sevColor = interaction.severity === 'Severe' ? 'text-danger' :
+                             interaction.severity === 'Moderate' ? 'text-yellow-700' : 'text-ink/60';
+            const sevBg = interaction.severity === 'Severe' ? 'bg-danger/10' :
+                          interaction.severity === 'Moderate' ? 'bg-yellow-50' : 'bg-gray-50';
+            const shortDesc = interaction.description.length > 80
+              ? interaction.description.substring(0, 80) + '...'
+              : interaction.description;
+            return `
+              <div class="${sevBg} rounded-xl p-3 mb-2">
+                <div class="flex items-center justify-between mb-1">
+                  <p class="font-bold text-sm">${esc(otherDrug)}</p>
+                  <span class="${sevColor} text-xs font-bold px-2 py-0.5 rounded-full border border-current/20">${esc(interaction.severity)}</span>
+                </div>
+                <p class="text-xs text-ink/60 leading-snug">${esc(shortDesc)}</p>
+                <button onclick="event.stopPropagation(); showInteractionDetail(${m.id}, ${idx})"
+                  class="text-primary text-xs font-bold mt-2 underline active:opacity-70">
+                  Learn More
+                </button>
+              </div>`;
+          }).join('');
+
+          expandHtml = `
+            <div class="mt-2 w-full text-left">
+              <button onclick="toggleInteractionExpand(${m.id})"
+                class="w-full text-center text-xs font-bold py-2 rounded-lg active:bg-gray-100 transition
+                       ${hasSevere ? 'text-danger' : 'text-yellow-700'}">
+                <span id="expandArrow_${m.id}" class="inline-block transition-transform duration-200">▼</span>
+                View Interactions (${count})
+              </button>
+              <div id="expandSection_${m.id}" class="hidden mt-2">
+                ${items}
+              </div>
+            </div>`;
+        }
 
         return `
         <li class="bg-white rounded-2xl p-4 shadow-md relative flex flex-col items-center text-center min-h-[120px] justify-center border-l-4 ${borderClass}">
           <button onclick="removeMedication(${m.id})" class="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-danger/10 text-danger text-sm" aria-label="Remove">×</button>
+          ${badgeHtml}
           <p class="font-bold text-base leading-tight mt-1">${esc(m.name)}</p>
           ${m.condition ? `<p class="text-xs mt-0.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">${esc(m.condition)}</p>` : ''}
           <p class="text-primary font-semibold text-sm mt-1">${esc(m.dosage)}</p>
           ${m.scheduledTimes && m.scheduledTimes.length > 0 ? `<p class="text-ink/40 text-xs mt-1">⏰ ${m.scheduledTimes.map(formatTime12h).join(', ')}</p>` : ''}
           ${m.asNeeded ? `<p class="text-xs mt-0.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">As Needed</p>` : ''}
-          ${hasInteraction ? `<p class="text-xs mt-2 px-2 py-1 rounded-lg ${hasSevere ? 'bg-danger/10 text-danger' : 'bg-yellow-50 text-yellow-700'} font-semibold">⚠️ ${esc(otherDrugs.join(', '))}</p>` : ''}
+          ${expandHtml}
         </li>`;
       }).join('');
     }
 
-    // ── Drug Interaction Check (background) ──────
+    function toggleInteractionExpand(medId) {
+      const section = document.getElementById('expandSection_' + medId);
+      const arrow = document.getElementById('expandArrow_' + medId);
+      if (!section) return;
+      if (section.classList.contains('hidden')) {
+        section.classList.remove('hidden');
+        if (arrow) arrow.style.transform = 'rotate(180deg)';
+      } else {
+        section.classList.add('hidden');
+        if (arrow) arrow.style.transform = '';
+      }
+    }
+
+    // ── Drug Interaction Check (background, cached) ──
     async function checkAndDisplayInteractions() {
       if (medications.length < 2) {
         cachedInteractions = [];
+        invalidateInteractionCache();
         renderMedList();
+        renderInteractionSummary();
         return;
       }
+
+      // Try loading from localStorage cache first
+      const fromCache = loadCachedInteractions();
+      if (fromCache.length > 0) {
+        cachedInteractions = fromCache;
+        renderMedList();
+        renderInteractionSummary();
+        return;
+      }
+
+      // Show loading state
+      interactionCheckInProgress = true;
+      renderInteractionSummary();
+
       try {
         const names = medications.map(m => m.name);
         const res = await fetch('/api/drug-interactions', {
@@ -553,14 +760,161 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ medications: names }),
         });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('Interaction check failed');
         const data = await res.json();
         cachedInteractions = data.interactions || [];
-        renderMedList();
+        saveCachedInteractions(cachedInteractions);
       } catch {
-        // Silently fail — interaction badges are optional
+        // Silently fail — keep any existing cachedInteractions
+      } finally {
+        interactionCheckInProgress = false;
+        renderMedList();
+        renderInteractionSummary();
       }
     }
+
+    // ── Interaction Summary Rendering ──────────────
+    function renderInteractionSummary() {
+      const card = document.getElementById('interactionSummaryCard');
+      const loading = document.getElementById('interactionSummaryLoading');
+      const results = document.getElementById('interactionSummaryResults');
+      const clean = document.getElementById('interactionSummaryClean');
+
+      loading.classList.add('hidden');
+      results.classList.add('hidden');
+      clean.classList.add('hidden');
+
+      if (medications.length < 2) { card.classList.add('hidden'); return; }
+      card.classList.remove('hidden');
+
+      if (interactionCheckInProgress) { loading.classList.remove('hidden'); return; }
+
+      if (cachedInteractions.length === 0) { clean.classList.remove('hidden'); return; }
+
+      // Count by severity
+      const severe = cachedInteractions.filter(i => i.severity === 'Severe').length;
+      const moderate = cachedInteractions.filter(i => i.severity === 'Moderate').length;
+      const mild = cachedInteractions.filter(i => i.severity === 'Mild').length;
+      const total = cachedInteractions.length;
+      const hasSevere = severe > 0;
+
+      // Style the card
+      results.className = hasSevere
+        ? 'rounded-2xl p-5 shadow-lg border-2 bg-red-50 border-danger/30'
+        : 'rounded-2xl p-5 shadow-lg border-2 bg-yellow-50 border-yellow-400/30';
+
+      document.getElementById('summaryIcon').textContent = hasSevere ? '🚨' : '⚠️';
+
+      const titleEl = document.getElementById('summaryTitle');
+      titleEl.textContent = `Found ${total} drug interaction${total > 1 ? 's' : ''} across your medications`;
+      titleEl.className = `font-bold text-lg ${hasSevere ? 'text-danger' : 'text-yellow-700'}`;
+
+      const parts = [];
+      if (severe > 0) parts.push(`${severe} severe`);
+      if (moderate > 0) parts.push(`${moderate} moderate`);
+      if (mild > 0) parts.push(`${mild} mild`);
+      document.getElementById('summaryBreakdown').textContent = parts.join(', ');
+
+      const btn = document.getElementById('summaryReviewBtn');
+      btn.className = hasSevere
+        ? 'btn-touch w-full mt-3 bg-white border-2 border-danger text-danger rounded-xl py-3 font-semibold text-base active:scale-95 transition'
+        : 'btn-touch w-full mt-3 bg-white border-2 border-yellow-600 text-yellow-700 rounded-xl py-3 font-semibold text-base active:scale-95 transition';
+
+      results.classList.remove('hidden');
+    }
+
+    // ── Interaction Modals ─────────────────────────
+    function showInteractionDetail(medId, interactionIndex) {
+      const med = medications.find(m => m.id === medId);
+      if (!med) return;
+      const medInteractions = cachedInteractions.filter(i =>
+        i.pair.toLowerCase().includes(med.name.toLowerCase())
+      );
+      const interaction = medInteractions[interactionIndex];
+      if (!interaction) return;
+
+      document.getElementById('modalPair').textContent = interaction.pair;
+      document.getElementById('modalDescription').textContent = interaction.description;
+
+      const sevIcon = document.getElementById('modalSeverityIcon');
+      const sevText = document.getElementById('modalSeverityText');
+      if (interaction.severity === 'Severe') {
+        sevIcon.textContent = '🚨';
+        sevText.textContent = 'Severe';
+        sevText.className = 'text-lg font-bold px-3 py-1 rounded-full bg-danger/10 text-danger';
+      } else if (interaction.severity === 'Moderate') {
+        sevIcon.textContent = '⚠️';
+        sevText.textContent = 'Moderate';
+        sevText.className = 'text-lg font-bold px-3 py-1 rounded-full bg-yellow-50 text-yellow-700';
+      } else {
+        sevIcon.textContent = 'ℹ️';
+        sevText.textContent = 'Mild';
+        sevText.className = 'text-lg font-bold px-3 py-1 rounded-full bg-blue-50 text-primary';
+      }
+
+      const recs = document.getElementById('modalRecommendations');
+      const recommendations = interaction.severity === 'Severe'
+        ? ['Consult your doctor before taking these together',
+           'Do not stop any medication without medical advice',
+           'Seek immediate medical attention if you experience adverse effects']
+        : interaction.severity === 'Moderate'
+        ? ['Inform your doctor about this combination',
+           'Monitor for unusual side effects',
+           'Consider adjusting timing of doses if advised']
+        : ['Generally safe, but inform your pharmacist',
+           'Watch for minor side effects'];
+      recs.innerHTML = recommendations.map(r => `<li>${esc(r)}</li>`).join('');
+
+      document.getElementById('interactionModal').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeInteractionModal() {
+      document.getElementById('interactionModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    function showAllInteractionsModal() {
+      const body = document.getElementById('allInteractionsBody');
+      if (cachedInteractions.length === 0) {
+        body.innerHTML = '<p class="text-ink/50 text-center py-4">No interactions found.</p>';
+      } else {
+        const sorted = [...cachedInteractions].sort((a, b) => {
+          const order = { Severe: 0, Moderate: 1, Mild: 2 };
+          return (order[a.severity] || 2) - (order[b.severity] || 2);
+        });
+        body.innerHTML = sorted.map(interaction => {
+          const sevColor = interaction.severity === 'Severe' ? 'border-danger bg-red-50' :
+                           interaction.severity === 'Moderate' ? 'border-yellow-400 bg-yellow-50' :
+                           'border-gray-200 bg-gray-50';
+          const sevTextColor = interaction.severity === 'Severe' ? 'text-danger' :
+                               interaction.severity === 'Moderate' ? 'text-yellow-700' : 'text-ink/60';
+          return `
+            <div class="border-2 ${sevColor} rounded-xl p-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-bold text-base">${esc(interaction.pair)}</p>
+                <span class="${sevTextColor} text-xs font-bold">${esc(interaction.severity)}</span>
+              </div>
+              <p class="text-sm text-ink/70">${esc(interaction.description)}</p>
+            </div>`;
+        }).join('');
+      }
+      document.getElementById('allInteractionsModal').classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeAllInteractionsModal() {
+      document.getElementById('allInteractionsModal').classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    // Backdrop click-to-close for modals
+    document.getElementById('interactionModal').addEventListener('click', function(e) {
+      if (e.target === this) closeInteractionModal();
+    });
+    document.getElementById('allInteractionsModal').addEventListener('click', function(e) {
+      if (e.target === this) closeAllInteractionsModal();
+    });
 
     // ── Camera ─────────────────────────────────────
     async function initCamera() {
@@ -767,6 +1121,7 @@
         alert(`Imported ${imported} medication(s). Skipped ${skipped} duplicate(s) already in your list.`);
       }
       showScreen('screenMedList');
+      invalidateInteractionCache();
       checkAndDisplayInteractions();
       // Batch-fetch conditions from AI for any meds still missing condition
       const needsCondition = medications.filter(m => !m.condition).map(m => m.name);
@@ -843,6 +1198,7 @@
       medications.push(med);
       saveMeds();
       renderMedList();
+      invalidateInteractionCache();
       checkAndDisplayInteractions();
 
       // If condition is missing, fetch from AI in background
@@ -1334,10 +1690,15 @@
 
       showScreen('screenQR');
 
+      // Auto-check interactions if not cached
+      if (cachedInteractions.length === 0 && medications.length >= 2) {
+        checkAndDisplayInteractions();
+      }
+
       // Build a compact payload
       const payload = {
         t: 'kaathu',
-        v: 1,
+        v: 2,
         ts: Date.now(),
         m: medications.map(med => {
           const entry = { n: med.name, d: med.dosage };
@@ -1346,6 +1707,19 @@
           return entry;
         }),
       };
+
+      // Include top 3 critical interactions (sorted by severity)
+      if (cachedInteractions.length > 0) {
+        const sorted = [...cachedInteractions].sort((a, b) => {
+          const order = { Severe: 0, Moderate: 1, Mild: 2 };
+          return (order[a.severity] || 2) - (order[b.severity] || 2);
+        });
+        payload.ix = sorted.slice(0, 3).map(i => ({
+          p: i.pair,
+          s: i.severity.charAt(0),
+          d: i.description.substring(0, 100),
+        }));
+      }
 
       // Encode as a URL so any phone camera opens the emergency view directly
       const base64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
@@ -1387,41 +1761,47 @@
       });
     }
 
-    // ── Drug Interactions ──────────────────────────
+    // ── Drug Interactions (QR screen) ───────────────
     async function checkInteractions() {
       if (medications.length < 2) {
         alert('Add at least two medications to check for interactions.');
         return;
       }
+
+      // Use cached data if available
+      if (cachedInteractions.length > 0) {
+        displayInteractionsOnQRScreen();
+        return;
+      }
+
       showLoading('Checking interactions...');
       try {
-        const names = medications.map(m => m.name);
-        const res = await fetch('/api/drug-interactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ medications: names }),
-        });
-        if (!res.ok) throw new Error('Interaction check failed');
-        const data = await res.json();
-        const body = document.getElementById('interactionsBody');
-        if (!data.interactions || data.interactions.length === 0) {
-          body.innerHTML = '<p class="text-secondary font-semibold">No known interactions found.</p>';
-        } else {
-          body.innerHTML = data.interactions.map(i =>
-            `<div class="py-2 border-b last:border-0">
-              <p class="font-semibold text-danger">${esc(i.pair)}</p>
-              <p class="text-ink/70">${esc(i.description)}</p>
-              <p class="text-sm text-ink/50">Severity: ${esc(i.severity)}</p>
-            </div>`
-          ).join('');
-        }
-        document.getElementById('interactionsResult').classList.remove('hidden');
+        await checkAndDisplayInteractions();
+        displayInteractionsOnQRScreen();
       } catch (err) {
         alert('Could not check interactions. Please try again.');
         console.error(err);
       } finally {
         hideLoading();
       }
+    }
+
+    function displayInteractionsOnQRScreen() {
+      const body = document.getElementById('interactionsBody');
+      if (cachedInteractions.length === 0) {
+        body.innerHTML = '<p class="text-secondary font-semibold">No known interactions found.</p>';
+      } else {
+        body.innerHTML = cachedInteractions.map(i => {
+          const sevColor = i.severity === 'Severe' ? 'text-danger' :
+                           i.severity === 'Moderate' ? 'text-yellow-700' : 'text-ink/60';
+          return `<div class="py-2 border-b last:border-0">
+            <p class="font-semibold ${sevColor}">${esc(i.pair)}</p>
+            <p class="text-ink/70">${esc(i.description)}</p>
+            <p class="text-sm text-ink/50">Severity: ${esc(i.severity)}</p>
+          </div>`;
+        }).join('');
+      }
+      document.getElementById('interactionsResult').classList.remove('hidden');
     }
 
     // ── Helpers ─────────────────────────────────────
@@ -1461,6 +1841,13 @@
 
     // ── Init ───────────────────────────────────────
     renderMedList();
+
+    // Load cached interactions on startup
+    cachedInteractions = loadCachedInteractions();
+    renderInteractionSummary();
+    if (medications.length >= 2 && cachedInteractions.length === 0) {
+      checkAndDisplayInteractions();
+    }
 
     // Backfill conditions for existing medications from AI (background)
     const _medsNeedingCondition = medications.filter(m => !m.condition).map(m => m.name);

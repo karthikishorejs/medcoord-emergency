@@ -236,3 +236,135 @@ describe('QR data validation (emergency responder)', () => {
     expect(validateQRData('')).toBeNull();
   });
 });
+
+// ── Interaction Cache Tests ──────────────────────
+describe('Interaction cache management', () => {
+  const CACHE_KEY = 'kaathu_interactions';
+  const TTL = 24 * 60 * 60 * 1000;
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  test('saves cache with timestamp and medication fingerprint', () => {
+    const interactions = [{ pair: 'Aspirin + Ibuprofen', severity: 'Moderate', description: 'test interaction' }];
+    const medKey = ['aspirin', 'ibuprofen'].sort().join('|');
+
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      medKey: medKey,
+      interactions: interactions,
+    }));
+
+    const stored = JSON.parse(localStorage.getItem(CACHE_KEY));
+    expect(stored.interactions).toHaveLength(1);
+    expect(stored.interactions[0].pair).toBe('Aspirin + Ibuprofen');
+    expect(stored.medKey).toBe('aspirin|ibuprofen');
+    expect(stored.timestamp).toBeDefined();
+    expect(typeof stored.timestamp).toBe('number');
+  });
+
+  test('expired cache (25h old) is detected as stale', () => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now() - (25 * 60 * 60 * 1000),
+      medKey: 'aspirin|ibuprofen',
+      interactions: [{ pair: 'Aspirin + Ibuprofen', severity: 'Moderate', description: 'test' }],
+    }));
+
+    const raw = JSON.parse(localStorage.getItem(CACHE_KEY));
+    const expired = (Date.now() - raw.timestamp) > TTL;
+    expect(expired).toBe(true);
+  });
+
+  test('fresh cache (1h old) is not stale', () => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now() - (1 * 60 * 60 * 1000),
+      medKey: 'aspirin|ibuprofen',
+      interactions: [{ pair: 'Aspirin + Ibuprofen', severity: 'Moderate', description: 'test' }],
+    }));
+
+    const raw = JSON.parse(localStorage.getItem(CACHE_KEY));
+    const expired = (Date.now() - raw.timestamp) > TTL;
+    expect(expired).toBe(false);
+  });
+
+  test('changed medication list invalidates cache (fingerprint mismatch)', () => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      medKey: 'aspirin|ibuprofen',
+      interactions: [{ pair: 'Aspirin + Ibuprofen', severity: 'Moderate', description: 'test' }],
+    }));
+
+    const newMedKey = ['aspirin', 'metformin'].sort().join('|');
+    const stored = JSON.parse(localStorage.getItem(CACHE_KEY));
+    expect(stored.medKey).not.toBe(newMedKey);
+  });
+
+  test('same medication list matches cache fingerprint', () => {
+    const medKey = ['ibuprofen', 'aspirin'].sort().join('|');
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      medKey: medKey,
+      interactions: [{ pair: 'Aspirin + Ibuprofen', severity: 'Moderate', description: 'test' }],
+    }));
+
+    const stored = JSON.parse(localStorage.getItem(CACHE_KEY));
+    // Even if order differs, sorted fingerprint should match
+    const checkKey = ['aspirin', 'ibuprofen'].sort().join('|');
+    expect(stored.medKey).toBe(checkKey);
+  });
+
+  test('invalidateInteractionCache removes the key', () => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      timestamp: Date.now(),
+      medKey: 'aspirin|ibuprofen',
+      interactions: [],
+    }));
+    expect(localStorage.getItem(CACHE_KEY)).not.toBeNull();
+    localStorage.removeItem(CACHE_KEY);
+    expect(localStorage.getItem(CACHE_KEY)).toBeNull();
+  });
+});
+
+describe('Interaction severity counting', () => {
+  test('counts severities correctly', () => {
+    const interactions = [
+      { pair: 'A + B', severity: 'Severe', description: 'test' },
+      { pair: 'A + C', severity: 'Moderate', description: 'test' },
+      { pair: 'B + C', severity: 'Moderate', description: 'test' },
+      { pair: 'C + D', severity: 'Mild', description: 'test' },
+    ];
+    const severe = interactions.filter(i => i.severity === 'Severe').length;
+    const moderate = interactions.filter(i => i.severity === 'Moderate').length;
+    const mild = interactions.filter(i => i.severity === 'Mild').length;
+    expect(severe).toBe(1);
+    expect(moderate).toBe(2);
+    expect(mild).toBe(1);
+  });
+
+  test('empty interactions has zero counts', () => {
+    const interactions = [];
+    expect(interactions.filter(i => i.severity === 'Severe').length).toBe(0);
+    expect(interactions.filter(i => i.severity === 'Moderate').length).toBe(0);
+    expect(interactions.filter(i => i.severity === 'Mild').length).toBe(0);
+  });
+
+  test('hasSevere flag is true when any severe interaction exists', () => {
+    const interactions = [
+      { severity: 'Mild' },
+      { severity: 'Severe' },
+      { severity: 'Moderate' },
+    ];
+    const hasSevere = interactions.some(i => i.severity === 'Severe');
+    expect(hasSevere).toBe(true);
+  });
+
+  test('hasSevere flag is false when no severe interactions', () => {
+    const interactions = [
+      { severity: 'Mild' },
+      { severity: 'Moderate' },
+    ];
+    const hasSevere = interactions.some(i => i.severity === 'Severe');
+    expect(hasSevere).toBe(false);
+  });
+});

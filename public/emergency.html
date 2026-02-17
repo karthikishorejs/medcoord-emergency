@@ -185,15 +185,51 @@
 
       document.getElementById('scanTime').textContent = `Card generated: ${generated}`;
 
+      // Show interaction warnings if present in QR payload
+      const interactions = isCompact ? (data.ix || []) : [];
+      const interactingNames = new Set();
+      if (interactions.length > 0) {
+        interactions.forEach(i => {
+          (i.p || '').split(' + ').forEach(name => interactingNames.add(name.toLowerCase().trim()));
+        });
+      }
+
       const list = document.getElementById('medResults');
-      list.innerHTML = meds.map(m => `
-        <li class="bg-white rounded-2xl p-4 shadow">
-          <p class="font-bold text-lg">${esc(m.name)}</p>
+
+      // Interaction warning banner
+      if (interactions.length > 0) {
+        const hasSevere = interactions.some(i => i.s === 'S');
+        const bannerHtml = `
+          <li class="${hasSevere ? 'bg-red-100 border-2 border-danger' : 'bg-yellow-50 border-2 border-yellow-400'} rounded-2xl p-4 mb-2">
+            <p class="font-bold text-lg ${hasSevere ? 'text-danger' : 'text-yellow-700'} mb-2">
+              ${hasSevere ? '🚨' : '⚠️'} Drug Interaction${interactions.length > 1 ? 's' : ''} Detected
+            </p>
+            ${interactions.map(i => {
+              const sevLabel = i.s === 'S' ? 'Severe' : (i.s === 'M' ? 'Moderate' : 'Mild');
+              const sevColor = i.s === 'S' ? 'text-danger' : 'text-yellow-700';
+              return `<div class="py-1 border-t border-gray-200 first:border-0">
+                <p class="font-semibold ${sevColor}">${esc(i.p)} <span class="text-xs">(${sevLabel})</span></p>
+                <p class="text-sm text-ink/70">${esc(i.d)}</p>
+              </div>`;
+            }).join('')}
+          </li>`;
+        list.innerHTML = bannerHtml;
+      } else {
+        list.innerHTML = '';
+      }
+
+      // Medication list with interaction highlighting
+      list.innerHTML += meds.map(m => {
+        const isInteracting = interactingNames.has(m.name.toLowerCase().trim());
+        const highlightClass = isInteracting ? 'border-2 border-danger' : '';
+        return `
+        <li class="bg-white rounded-2xl p-4 shadow ${highlightClass}">
+          <p class="font-bold text-lg">${esc(m.name)} ${isInteracting ? '<span class="text-danger text-sm">⚠️</span>' : ''}</p>
           ${m.condition ? `<p class="text-sm text-primary font-semibold">${esc(m.condition)}</p>` : ''}
           <p class="text-ink/70">${esc(m.dosage)}</p>
           ${m.instructions ? `<p class="text-ink/50 text-sm mt-1">${esc(m.instructions)}</p>` : ''}
-        </li>
-      `).join('');
+        </li>`;
+      }).join('');
 
       // Start auto-close countdown
       startAutoClose();
